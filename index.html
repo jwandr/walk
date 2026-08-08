@@ -163,7 +163,7 @@ e=>resolve({lat:e.coords.latitude,lon:e.coords.longitude,displayName:"Your curre
 e=>{let message="Couldn't get your location.";if(e.code===1)message="Location permission was denied.";if(e.code===2)message="Your location couldn't be determined.";if(e.code===3)message="Location lookup timed out.";reject(new Error(message))},
 {enableHighAccuracy:true,timeout:10000,maximumAge:60000}
 );
-
+})
 async function geocode(query){
 const url=CONFIG.nominatim+"/search?"+new URLSearchParams({q:query,format:"json",limit:"1",addressdetails:"1"});
 const response=await fetch(url,{headers:{Accept:"application/json"}});
