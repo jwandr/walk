@@ -131,759 +131,1459 @@ input[type=text]::placeholder{color:var(--cream-dim);opacity:.7}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 const CONFIG={
-nominatim:"https://nominatim.openstreetmap.org",
-overpassEndpoints:[
-"https://overpass-api.de/api/interpreter",
-"https://overpass.kumi.systems/api/interpreter",
-"https://overpass.private.coffee/api/interpreter"
-],
-routing:"https://routing.openstreetmap.de/routed-foot/route/v1/driving",
-maxCandidates:90,
-routesToGenerate:3,
-requestTimeout:18000,
-retryCount:2,
-minPlaceSeparationKm:.025
+  nominatim:"https://nominatim.openstreetmap.org",
+  overpassEndpoints:[
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter"
+  ],
+  routing:"https://routing.openstreetmap.de/routed-foot/route/v1/foot",
+  maxCandidates:70,
+  routesToGenerate:3,
+  discoveryRadiusMultiplier:.9,
+  requestTimeout:18000
 };
-const DISTANCES={
-short:{label:"Short",sub:"3–5 km",target:4,radius:2600,stops:[4,5]},
-medium:{label:"Medium",sub:"5–8 km",target:6.5,radius:4300,stops:[5,6]},
-long:{label:"Long",sub:"8–11 km",target:9.5,radius:6200,stops:[6,7]}
+const state={
+  distance:"medium",
+  start:null,
+  startText:"",
+  purpose:"",
+  preferences:null,
+  currentWalks:[],
+  selectedWalk:null,
+  searchId:0
 };
-const QUICK_PURPOSES=["Curious","History","Architecture","Nature","Weird","Food & coffee","Hidden places","Local life","Surprise me"];
-const state={distance:"medium",start:null,startText:"",purpose:"",preferences:null,currentWalks:[],selectedWalk:null,searchSeed:Date.now()};
 let map=null,startMarker=null,routeLayer=null,stopMarkers=[];
-function initMap(){
-map=L.map("map",{zoomControl:true,attributionControl:true}).setView([-31.9523,115.8613],13);
-L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",{attribution:"&copy; OpenStreetMap contributors &copy; CARTO",subdomains:"abcd",maxZoom:19}).addTo(map);
-routeLayer=L.layerGroup().addTo(map);
-}
-function clearMapLayers(){
-routeLayer.clearLayers();
-stopMarkers=[];
-if(startMarker){map.removeLayer(startMarker);startMarker=null;}
-}
-function renderStartMarker(point){
-if(startMarker)map.removeLayer(startMarker);
-startMarker=L.marker([point.lat,point.lon],{icon:L.divIcon({className:"",html:'<div class="start-marker"></div>',iconSize:[16,16],iconAnchor:[8,8]})}).bindPopup("<b>Your starting point</b>").addTo(map);
-}
-function getCurrentLocation(){
-return new Promise((resolve,reject)=>{
-if(!navigator.geolocation){reject(new Error("Geolocation isn't available in this browser."));return;}
-navigator.geolocation.getCurrentPosition(
-position=>resolve({lat:position.coords.latitude,lon:position.coords.longitude,displayName:"Your current location",source:"browser"}),
-error=>{
-let message="Couldn't get your location.";
-if(error.code===1)message="Location permission was denied.";
-if(error.code===2)message="Your location couldn't be determined.";
-if(error.code===3)message="Location request timed out.";
-reject(new Error(message));
-},
-{enableHighAccuracy:true,timeout:10000,maximumAge:60000}
-);
-});
-}
-async function fetchWithTimeout(url,options={},timeout=CONFIG.requestTimeout){
-const controller=new AbortController();
-const timer=setTimeout(()=>controller.abort(),timeout);
-try{
-return await fetch(url,{...options,signal:controller.signal});
-}catch(error){
-if(error.name==="AbortError")throw new Error("The geographic search timed out. Please try again.");
-throw error;
-}finally{
-clearTimeout(timer);
-}
-}
-async function geocode(query){
-const url=CONFIG.nominatim+"/search?"+new URLSearchParams({q:query,format:"json",limit:"1",addressdetails:"1"});
-const response=await fetchWithTimeout(url,{headers:{Accept:"application/json"}});
-if(!response.ok)throw new Error("Location search failed.");
-const results=await response.json();
-if(!results.length)throw new Error(`Couldn't find "${query}".`);
-const result=results[0];
-return{lat:Number(result.lat),lon:Number(result.lon),displayName:result.display_name,source:"nominatim",osmId:result.osm_id,osmType:result.osm_type};
-}
-function haversineKm(a,b){
-const lat1=a.lat*Math.PI/180;
-const lat2=b.lat*Math.PI/180;
-const dLat=(b.lat-a.lat)*Math.PI/180;
-const dLon=(b.lon-a.lon)*Math.PI/180;
-const h=Math.sin(dLat/2)**2+Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
-return 12742*Math.atan2(Math.sqrt(h),Math.sqrt(1-h));
-}
-function interpretPurpose(text){
-const t=(text||"").toLowerCase().trim();
-const p={interest:.5,quirky:0,history:0,food:0,nature:0,architecture:0,local:.5,touristPenalty:.5,categories:[],keywords:[]};
-if(!t){
-p.interest=1;p.quirky=.5;p.history=.4;p.nature=.4;p.architecture=.4;
-return p;
-}
-if(t.includes("curious")||t.includes("interesting")||t.includes("discover"))p.interest+=1;
-if(["weird","odd","strange","quirky","unusual","eccentric"].some(x=>t.includes(x)))p.quirky+=1.5;
-if(["history","historic","heritage","old","ancient"].some(x=>t.includes(x))){p.history+=1.4;p.categories.push("history");}
-if(["architecture","building","buildings","design"].some(x=>t.includes(x))){p.architecture+=1.4;p.categories.push("architecture");}
-if(["nature","green","park","garden","trees","wildlife"].some(x=>t.includes(x))){p.nature+=1.5;p.categories.push("nature");}
-if(["food","eat","coffee","cafe","bakery","market","lunch"].some(x=>t.includes(x))){p.food+=1.5;p.categories.push("food");}
-if(["local","locals","neighbourhood","neighborhood"].some(x=>t.includes(x))){p.local+=1.4;p.touristPenalty+=.8;}
-if(["hidden","secret","unknown","quiet","underrated"].some(x=>t.includes(x))){p.local+=1;p.quirky+=.8;p.touristPenalty+=1;}
-if(t.includes("tourist")&&(t.includes("avoid")||t.includes("less")||t.includes("away")||t.includes("don't")))p.touristPenalty+=1.5;
-p.keywords=t.split(/[\s,.;!?]+/).filter(x=>x.length>3);
-return p;
-}
-function categoryQueries(preferences,radius,point){
-const around=`(around:${radius},${point.lat},${point.lon})`;
-const queries=[];
-const push=(name,body)=>queries.push({name,query:`[out:json][timeout:15];(${body});out center tags;`});
-if(preferences.history>0)push("history",`
-node${around}[historic];
-way${around}[historic];
-relation${around}[historic];
-node${around}[heritage];
-way${around}[heritage];
-node${around}[tourism~"museum|gallery|attraction"];
-way${around}[tourism~"museum|gallery|attraction"];
-`);
-if(preferences.architecture>0)push("architecture",`
-node${around}[building][name];
-way${around}[building][name];
-node${around}[historic][name];
-way${around}[historic][name];
-node${around}[tourism~"museum|gallery"];
-way${around}[tourism~"museum|gallery"];
-`);
-if(preferences.nature>0)push("nature",`
-node${around}[leisure~"park|garden|nature_reserve"];
-way${around}[leisure~"park|garden|nature_reserve"];
-relation${around}[leisure~"park|garden|nature_reserve"];
-node${around}[natural~"beach|wood|water|peak|cliff"];
-way${around}[natural~"beach|wood|water|peak|cliff"];
-node${around}[tourism="viewpoint"];
-way${around}[tourism="viewpoint"];
-`);
-if(preferences.food>0)push("food",`
-node${around}[amenity~"cafe|restaurant|marketplace|food_court"];
-way${around}[amenity~"cafe|restaurant|marketplace|food_court"];
-node${around}[shop~"bakery|confectionery|coffee|market|pastry"];
-way${around}[shop~"bakery|confectionery|coffee|market|pastry"];
-`);
-if(preferences.quirky>0)push("quirky",`
-node${around}[memorial];
-way${around}[memorial];
-node${around}[artwork_type];
-way${around}[artwork_type];
-node${around}[man_made~"monument|tower|bridge|obelisk"];
-way${around}[man_made~"monument|tower|bridge|obelisk"];
-node${around}[historic~"ruins|archaeological_site|wayside_shrine|boundary_stone"];
-way${around}[historic~"ruins|archaeological_site|wayside_shrine|boundary_stone"];
-`);
-push("general",`
-node${around}[tourism][name];
-way${around}[tourism][name];
-node${around}[historic][name];
-way${around}[historic][name];
-node${around}[amenity~"arts_centre|theatre|cinema|library|place_of_worship"][name];
-way${around}[amenity~"arts_centre|theatre|cinema|library|place_of_worship"][name];
-node${around}[leisure~"park|garden|nature_reserve"][name];
-way${around}[leisure~"park|garden|nature_reserve"][name];
-node${around}[memorial][name];
-way${around}[memorial][name];
-`);
-return queries;
-}
-function randomisedArray(array,random){
-const copy=array.slice();
-for(let i=copy.length-1;i>0;i--){
-const j=Math.floor(random()*(i+1));
-[copy[i],copy[j]]=[copy[j],copy[i]];
-}
-return copy;
-}
-function hashString(text){
-let hash=2166136261;
-for(let i=0;i<text.length;i++){hash^=text.charCodeAt(i);hash=Math.imul(hash,16777619);}
-return hash>>>0;
-}
-function seededRandom(seed){
-let value=hashString(String(seed));
-return function(){
-value+=1831565813;
-let x=value;
-x=Math.imul(x^x>>>15,1|x);
-x^=x+Math.imul(x^x>>>7,61|x);
-return((x^x>>>14)>>>0)/4294967296;
+
+const DISTANCES={
+  short:{
+    label:"Short",
+    sub:"3–5 km",
+    target:4,
+    radius:2600,
+    minKm:3,
+    maxKm:5,
+    stops:[4,5]
+  },
+  medium:{
+    label:"Medium",
+    sub:"5–8 km",
+    target:6.5,
+    radius:4300,
+    minKm:5,
+    maxKm:8,
+    stops:[5,6]
+  },
+  long:{
+    label:"Long",
+    sub:"8–11 km",
+    target:9.5,
+    radius:6200,
+    minKm:8,
+    maxKm:11,
+    stops:[6,7]
+  }
 };
-}
-async function queryOverpass(query,attempt=0){
-const endpoint=CONFIG.overpassEndpoints[(hashString(query)+attempt)%CONFIG.overpassEndpoints.length];
-try{
-const response=await fetchWithTimeout(endpoint,{method:"POST",headers:{"Content-Type":"text/plain;charset=UTF-8","Accept":"application/json"},body:query});
-if(response.ok)return await response.json();
-if((response.status===429||response.status===504||response.status===502||response.status===503)&&attempt<CONFIG.retryCount){
-await new Promise(resolve=>setTimeout(resolve,1200*(attempt+1)));
-return queryOverpass(query,attempt+1);
-}
-throw new Error(`Overpass returned ${response.status}.`);
-}catch(error){
-if(attempt<CONFIG.retryCount){
-await new Promise(resolve=>setTimeout(resolve,900*(attempt+1)));
-return queryOverpass(query,attempt+1);
-}
-throw error;
-}
-}
-function getPlaceCoordinates(element){
-if(typeof element.lat==="number"&&typeof element.lon==="number")return{lat:element.lat,lon:element.lon};
-if(element.center&&typeof element.center.lat==="number"&&typeof element.center.lon==="number")return{lat:element.center.lat,lon:element.center.lon};
-return null;
-}
-function normalisePlace(element,tags,coords,name){
-const type=detectPlaceType(tags);
-return{
-id:`${element.type}-${element.id}`,
-osmId:element.id,
-osmType:element.type,
-name,
-lat:coords.lat,
-lon:coords.lon,
-type,
-category:type.category,
-description:createPlaceDescription(tags,type),
-tags,
-touristiness:estimateTouristiness(tags,type),
-interest:calculateInterest(tags,type),
-quirky:calculateQuirk(tags,type),
-history:calculateHistory(tags,type),
-food:calculateFood(tags,type),
-nature:calculateNature(tags,type),
-architecture:calculateArchitecture(tags,type)
-};
-}
-function detectPlaceType(tags){
-if(tags.historic||tags.heritage)return{label:"Historic site",category:"history"};
-if(tags.tourism==="museum")return{label:"Museum",category:"culture"};
-if(tags.tourism==="gallery"||tags.amenity==="arts_centre")return{label:"Arts",category:"culture"};
-if(tags.tourism==="viewpoint")return{label:"Viewpoint",category:"nature"};
-if(tags.leisure==="park")return{label:"Park",category:"nature"};
-if(tags.leisure==="garden")return{label:"Garden",category:"nature"};
-if(tags.leisure==="nature_reserve")return{label:"Nature reserve",category:"nature"};
-if(tags.natural)return{label:"Natural feature",category:"nature"};
-if(tags.amenity==="cafe")return{label:"Café",category:"food"};
-if(tags.amenity==="restaurant")return{label:"Restaurant",category:"food"};
-if(tags.amenity==="marketplace")return{label:"Market",category:"food"};
-if(tags.shop==="bakery"||tags.shop==="pastry")return{label:"Bakery",category:"food"};
-if(tags.artwork_type)return{label:"Artwork",category:"quirky"};
-if(tags.memorial||tags.historic==="memorial")return{label:"Memorial",category:"history"};
-if(tags.man_made==="monument")return{label:"Monument",category:"quirky"};
-if(tags.building)return{label:"Building",category:"architecture"};
-if(tags.tourism)return{label:"Attraction",category:"culture"};
-return{label:"Interesting place",category:"interest"};
-}
-function createPlaceDescription(tags,type){
-const parts=[];
-if(tags.description)parts.push(tags.description);
-if(tags.historic)parts.push(humaniseTag(tags.historic));
-if(tags.tourism)parts.push(humaniseTag(tags.tourism));
-if(tags.amenity)parts.push(humaniseTag(tags.amenity));
-if(tags.leisure)parts.push(humaniseTag(tags.leisure));
-if(tags.architect)parts.push(`designed by ${tags.architect}`);
-if(tags.start_date)parts.push(`dating from ${tags.start_date}`);
-if(tags.artwork_type)parts.push(humaniseTag(tags.artwork_type));
-if(tags.inscription)parts.push("has an inscription");
-return parts.length?parts.slice(0,2).join(" · "):`${type.label} worth exploring along the way.`;
-}
-function humaniseTag(value){
-return String(value).replace(/_/g," ").replace(/\b\w/g,char=>char.toUpperCase());
-}
-function calculateInterest(tags,type){
-let score=2;
-if(tags.wikipedia)score+=2;
-if(tags.wikidata)score+=1;
-if(tags.description)score+=1;
-if(tags.start_date)score+=1;
-if(tags.architect)score+=1;
-if(type.category==="culture")score+=1;
-if(tags.name&&tags.name.length>8)score+=.3;
-return Math.min(5,score);
-}
-function calculateQuirk(tags){
-let score=0;
-if(tags.memorial)score+=2;
-if(tags.historic)score+=1;
-if(tags.artwork_type)score+=2;
-if(tags.man_made)score+=1;
-if(tags.description)score+=1;
-if(["ruins","archaeological_site","wayside_shrine","boundary_stone"].includes(tags.historic))score+=2;
-return Math.min(5,score);
-}
-function calculateHistory(tags){
-let score=0;
-if(tags.historic)score+=3;
-if(tags.heritage)score+=2;
-if(tags.start_date)score+=1;
-if(tags.wikipedia)score+=1;
-if(tags.wikidata)score+=1;
-return Math.min(5,score);
-}
-function calculateFood(tags){
-if(tags.amenity==="cafe")return 4;
-if(tags.amenity==="restaurant")return 4;
-if(tags.amenity==="marketplace")return 5;
-if(["bakery","pastry","confectionery","coffee"].includes(tags.shop))return 5;
-return 0;
-}
-function calculateNature(tags){
-if(tags.leisure==="park"||tags.leisure==="garden"||tags.leisure==="nature_reserve")return 5;
-if(tags.natural)return 4;
-if(tags.tourism==="viewpoint")return 4;
-return 0;
-}
-function calculateArchitecture(tags){
-let score=0;
-if(tags.architect)score+=3;
-if(tags.building)score+=1;
-if(tags.historic)score+=2;
-if(tags.tourism==="museum")score+=1;
-return Math.min(5,score);
-}
-function estimateTouristiness(tags){
-let score=1;
-if(tags.wikipedia)score+=1;
-if(tags.wikidata)score+=1;
-if(tags.tourism==="attraction")score+=2;
-if(tags.tourism==="museum")score+=1;
-if(tags.tourism==="viewpoint")score+=1;
-if(tags.historic==="monument")score+=1;
-return Math.min(5,score);
-}
-function deduplicatePlaces(places){
-const result=[];
-for(const place of places){
-if(!result.some(existing=>haversineKm(existing,place)<CONFIG.minPlaceSeparationKm))result.push(place);
-}
-return result;
-}
-async function discoverPlaces(start,radius,preferences){
-const random=seededRandom(`${start.lat},${start.lon}|${state.searchSeed}|${state.purpose}`);
-const rings=[
-Math.round(radius*.55),
-Math.round(radius*.85),
-Math.round(radius*1.15)
+
+const QUICK_PURPOSES=[
+  "Curious",
+  "History",
+  "Architecture",
+  "Nature",
+  "Weird",
+  "Food & coffee",
+  "Hidden places",
+  "Local life",
+  "Surprise me"
 ];
-let all=[];
-let successfulQueries=0;
-const queries=[];
-for(const ring of rings){
-queries.push(...categoryQueries(preferences,ring,start));
+
+function initMap(){
+  map=L.map("map",{zoomControl:true,attributionControl:true}).setView([-31.9523,115.8613],13);
+  L.tileLayer(
+    "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+    {
+      attribution:"&copy; OpenStreetMap contributors &copy; CARTO",
+      subdomains:"abcd",
+      maxZoom:19
+    }
+  ).addTo(map);
+  routeLayer=L.layerGroup().addTo(map);
 }
-const shuffled=randomisedArray(queries,random);
-const selected=shuffled.slice(0,Math.min(8,shuffled.length));
-for(let i=0;i<selected.length;i++){
-setStatus(`Searching nearby places · ${i+1} of ${selected.length}…`);
-try{
-const data=await queryOverpass(selected[i].query);
-successfulQueries++;
-for(const element of data.elements||[]){
-const tags=element.tags||{};
-const coords=getPlaceCoordinates(element);
-const name=tags.name||tags["name:en"];
-if(!coords||!name)continue;
-all.push(normalisePlace(element,tags,coords,name));
+
+function clearMapLayers(){
+  routeLayer.clearLayers();
+  stopMarkers=[];
+  if(startMarker){
+    map.removeLayer(startMarker);
+    startMarker=null;
+  }
 }
-}catch(error){
-console.warn("Place discovery query failed:",selected[i].name,error);
+
+function renderStartMarker(place){
+  if(startMarker)map.removeLayer(startMarker);
+  startMarker=L.marker(
+    [place.lat,place.lon],
+    {
+      icon:L.divIcon({
+        className:"",
+        html:'<div class="start-marker"></div>',
+        iconSize:[16,16],
+        iconAnchor:[8,8]
+      })
+    }
+  ).bindPopup("<b>Your starting point</b>").addTo(map);
 }
+
+function getCurrentLocation(){
+  return new Promise((resolve,reject)=>{
+    if(!navigator.geolocation){
+      reject(new Error("Geolocation isn't available in this browser."));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      e=>{
+        resolve({
+          lat:e.coords.latitude,
+          lon:e.coords.longitude,
+          displayName:"Your current location",
+          source:"browser"
+        });
+      },
+      e=>{
+        let message="Couldn't get your location.";
+        if(e.code===1)message="Location permission was denied.";
+        if(e.code===2)message="Your location couldn't be determined.";
+        if(e.code===3)message="Location lookup timed out.";
+        reject(new Error(message));
+      },
+      {
+        enableHighAccuracy:true,
+        timeout:12000,
+        maximumAge:60000
+      }
+    );
+  });
 }
-all=deduplicatePlaces(all);
-if(!all.length&&successfulQueries===0)throw new Error("The live geographic service is busy. Please wait a moment and try again.");
-return randomisedArray(all,random);
+
+async function fetchWithTimeout(url,options={},timeout=CONFIG.requestTimeout){
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),timeout);
+  try{
+    return await fetch(url,{...options,signal:controller.signal});
+  }catch(error){
+    if(error.name==="AbortError")throw new Error("The geographic search timed out. Please try again.");
+    throw error;
+  }finally{
+    clearTimeout(timer);
+  }
 }
+
+async function geocode(query){
+  const url=CONFIG.nominatim+"/search?"+new URLSearchParams({
+    q:query,
+    format:"json",
+    limit:"1",
+    addressdetails:"1"
+  });
+  const response=await fetchWithTimeout(
+    url,
+    {headers:{Accept:"application/json"}},
+    10000
+  );
+  if(!response.ok)throw new Error("Location search failed.");
+  const results=await response.json();
+  if(!results.length)throw new Error(`Couldn't find "${query}".`);
+  const item=results[0];
+  return{
+    lat:Number(item.lat),
+    lon:Number(item.lon),
+    displayName:item.display_name,
+    source:"nominatim",
+    osmId:item.osm_id,
+    osmType:item.osm_type
+  };
+}
+
+function haversineKm(a,b){
+  const lat1=a.lat*Math.PI/180;
+  const lat2=b.lat*Math.PI/180;
+  const dLat=(b.lat-a.lat)*Math.PI/180;
+  const dLon=(b.lon-a.lon)*Math.PI/180;
+  const h=
+    Math.sin(dLat/2)**2+
+    Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+  return 12742*Math.atan2(Math.sqrt(h),Math.sqrt(1-h));
+}
+
+function interpretPurpose(text){
+  const value=(text||"").toLowerCase().trim();
+  const result={
+    interest:.5,
+    quirky:0,
+    history:0,
+    food:0,
+    nature:0,
+    architecture:0,
+    local:.5,
+    touristPenalty:.5,
+    categories:[],
+    keywords:[]
+  };
+
+  if(!value){
+    result.interest=1;
+    result.quirky=.5;
+    result.history=.4;
+    result.nature=.4;
+    result.architecture=.4;
+    return result;
+  }
+
+  if(
+    value.includes("curious")||
+    value.includes("interesting")||
+    value.includes("discover")
+  )result.interest+=1;
+
+  if(
+    value.includes("weird")||
+    value.includes("odd")||
+    value.includes("strange")||
+    value.includes("quirky")||
+    value.includes("unusual")||
+    value.includes("eccentric")
+  )result.quirky+=1.5;
+
+  if(
+    value.includes("history")||
+    value.includes("historic")||
+    value.includes("heritage")||
+    value.includes("old")||
+    value.includes("ancient")
+  ){
+    result.history+=1.4;
+    result.categories.push("historic");
+  }
+
+  if(
+    value.includes("architecture")||
+    value.includes("building")||
+    value.includes("buildings")||
+    value.includes("design")
+  ){
+    result.architecture+=1.4;
+    result.categories.push("architecture");
+  }
+
+  if(
+    value.includes("nature")||
+    value.includes("green")||
+    value.includes("park")||
+    value.includes("garden")||
+    value.includes("trees")||
+    value.includes("wildlife")
+  ){
+    result.nature+=1.5;
+    result.categories.push("nature");
+  }
+
+  if(
+    value.includes("food")||
+    value.includes("eat")||
+    value.includes("coffee")||
+    value.includes("cafe")||
+    value.includes("bakery")||
+    value.includes("market")||
+    value.includes("lunch")
+  ){
+    result.food+=1.5;
+    result.categories.push("food");
+  }
+
+  if(
+    value.includes("local")||
+    value.includes("locals")||
+    value.includes("neighbourhood")||
+    value.includes("neighborhood")
+  ){
+    result.local+=1.4;
+    result.touristPenalty+=.8;
+  }
+
+  if(
+    value.includes("hidden")||
+    value.includes("secret")||
+    value.includes("unknown")||
+    value.includes("quiet")||
+    value.includes("underrated")
+  ){
+    result.local+=1;
+    result.quirky+=.8;
+    result.touristPenalty+=1;
+  }
+
+  if(
+    value.includes("tourist")&&
+    (
+      value.includes("avoid")||
+      value.includes("less")||
+      value.includes("away")||
+      value.includes("don't")
+    )
+  )result.touristPenalty+=1.5;
+
+  result.keywords=value.split(/[\s,.;!?]+/).filter(x=>x.length>3);
+  return result;
+}
+
+function buildOverpassQueries(start,radius){
+  const area=`(around:${Math.round(radius)},${start.lat},${start.lon})`;
+  const queries=[
+`[out:json][timeout:15];
+(
+  nwr${area}[tourism];
+  nwr${area}[historic];
+  nwr${area}[memorial];
+);
+out center tags;`,
+`[out:json][timeout:15];
+(
+  nwr${area}[amenity~"arts_centre|cafe|restaurant|theatre|cinema|library|marketplace"];
+);
+out center tags;`,
+`[out:json][timeout:15];
+(
+  nwr${area}[leisure~"park|garden|nature_reserve"];
+  nwr${area}[natural~"beach|wood|water|peak"];
+  nwr${area}[man_made~"tower|bridge|monument"];
+);
+out center tags;`
+  ];
+  return queries;
+}
+
+async function queryOverpass(query){
+  const endpoints=[...CONFIG.overpassEndpoints];
+  const offset=Math.floor(Math.random()*endpoints.length);
+  endpoints.push(...endpoints.splice(0,offset));
+
+  let lastError=null;
+
+  for(const endpoint of endpoints){
+    for(let attempt=0;attempt<2;attempt++){
+      try{
+        const response=await fetchWithTimeout(
+          endpoint,
+          {
+            method:"POST",
+            headers:{
+              "Content-Type":"text/plain;charset=UTF-8",
+              Accept:"application/json"
+            },
+            body:query
+          },
+          CONFIG.requestTimeout
+        );
+
+        if(response.status===429||response.status===502||response.status===503||response.status===504){
+          lastError=new Error(`Overpass returned ${response.status}`);
+          await new Promise(resolve=>setTimeout(resolve,1000*(attempt+1)));
+          continue;
+        }
+
+        if(!response.ok){
+          lastError=new Error(`Overpass returned ${response.status}`);
+          break;
+        }
+
+        return await response.json();
+      }catch(error){
+        lastError=error;
+        if(attempt===0){
+          await new Promise(resolve=>setTimeout(resolve,700));
+        }
+      }
+    }
+  }
+
+  throw lastError||new Error("Place discovery failed.");
+}
+
+async function discoverPlaces(start,radius){
+  const queries=buildOverpassQueries(start,radius);
+  const all=[];
+
+  for(const query of queries){
+    try{
+      const data=await queryOverpass(query);
+      if(data&&Array.isArray(data.elements)){
+        all.push(...data.elements);
+      }
+    }catch(error){
+      console.warn("Place discovery query failed:",error);
+    }
+  }
+
+  if(!all.length)throw new Error("Couldn't find enough mapped places nearby. Please try again in a moment.");
+
+  const places=[];
+
+  for(const element of all){
+    const tags=element.tags||{};
+    const name=tags.name||tags["name:en"];
+    const lat=element.lat??element.center?.lat;
+    const lon=element.lon??element.center?.lon;
+
+    if(!name||typeof lat!=="number"||typeof lon!=="number")continue;
+
+    const place=normalisePlace(
+      element,
+      tags,
+      lat,
+      lon,
+      name
+    );
+
+    if(place)places.push(place);
+  }
+
+  let result=deduplicatePlaces(places);
+
+  result=result
+    .filter(place=>haversineKm(start,place)>0.15)
+    .sort(()=>Math.random()-.5)
+    .slice(0,CONFIG.maxCandidates);
+
+  return result;
+}
+
+function normalisePlace(element,tags,lat,lon,name){
+  const type=detectPlaceType(tags);
+  return{
+    id:`${element.type}-${element.id}`,
+    osmId:element.id,
+    osmType:element.type,
+    name,
+    lat,
+    lon,
+    type,
+    category:type.category,
+    description:createPlaceDescription(tags,type),
+    tags,
+    touristiness:estimateTouristiness(tags,type),
+    interest:calculateInterest(tags,type),
+    quirky:calculateQuirk(tags,type),
+    history:calculateHistory(tags,type),
+    food:calculateFood(tags,type),
+    nature:calculateNature(tags,type),
+    architecture:calculateArchitecture(tags,type)
+  };
+}
+
+function detectPlaceType(tags){
+  if(tags.historic||tags.archaeological_site)
+    return{label:"Historic site",category:"history"};
+  if(tags.tourism==="museum")
+    return{label:"Museum",category:"culture"};
+  if(tags.tourism==="gallery"||tags.amenity==="arts_centre")
+    return{label:"Arts",category:"culture"};
+  if(tags.tourism==="viewpoint")
+    return{label:"Viewpoint",category:"nature"};
+  if(tags.leisure==="park")
+    return{label:"Park",category:"nature"};
+  if(tags.leisure==="garden")
+    return{label:"Garden",category:"nature"};
+  if(tags.leisure==="nature_reserve")
+    return{label:"Nature reserve",category:"nature"};
+  if(tags.natural)
+    return{label:"Natural feature",category:"nature"};
+  if(tags.amenity==="cafe")
+    return{label:"Café",category:"food"};
+  if(tags.amenity==="restaurant")
+    return{label:"Restaurant",category:"food"};
+  if(tags.amenity==="marketplace")
+    return{label:"Market",category:"food"};
+  if(tags.memorial||tags.historic==="memorial")
+    return{label:"Memorial",category:"history"};
+  if(tags.man_made==="monument")
+    return{label:"Monument",category:"quirky"};
+  if(tags.man_made==="tower")
+    return{label:"Tower",category:"architecture"};
+  if(tags.man_made==="bridge")
+    return{label:"Bridge",category:"architecture"};
+  if(tags.tourism)
+    return{label:"Attraction",category:"culture"};
+  return{label:"Interesting place",category:"interest"};
+}
+
+function createPlaceDescription(tags,type){
+  const descriptions=[];
+  if(tags.description)descriptions.push(tags.description);
+  if(tags.historic)descriptions.push(humaniseTag(tags.historic));
+  if(tags.tourism)descriptions.push(humaniseTag(tags.tourism));
+  if(tags.amenity)descriptions.push(humaniseTag(tags.amenity));
+  if(tags.leisure)descriptions.push(humaniseTag(tags.leisure));
+  if(tags.architect)descriptions.push(`designed by ${tags.architect}`);
+  if(tags.start_date)descriptions.push(`dating from ${tags.start_date}`);
+  return descriptions.length
+    ?descriptions.slice(0,2).join(" · ")
+    :`${type.label} worth exploring along the way.`;
+}
+
+function humaniseTag(value){
+  return String(value)
+    .replace(/_/g," ")
+    .replace(/\b\w/g,c=>c.toUpperCase());
+}
+
+function calculateInterest(tags,type){
+  let score=2;
+  if(tags.wikipedia)score+=2;
+  if(tags.wikidata)score+=1;
+  if(tags.description)score+=1;
+  if(tags.start_date)score+=1;
+  if(tags.architect)score+=1;
+  if(type.category==="culture")score+=1;
+  return Math.min(5,score);
+}
+
+function calculateQuirk(tags,type){
+  let score=0;
+  if(tags.memorial)score+=2;
+  if(tags.historic)score+=1;
+  if(tags.artwork_type)score+=2;
+  if(tags.man_made)score+=1;
+  if(tags.description)score+=1;
+  if(tags.historic==="ruins"||tags.historic==="archaeological_site")score+=2;
+  return Math.min(5,score);
+}
+
+function calculateHistory(tags,type){
+  let score=0;
+  if(tags.historic)score+=3;
+  if(tags.start_date)score+=1;
+  if(tags.wikipedia)score+=1;
+  if(tags.wikidata)score+=1;
+  return Math.min(5,score);
+}
+
+function calculateFood(tags,type){
+  if(tags.amenity==="cafe")return 4;
+  if(tags.amenity==="restaurant")return 4;
+  if(tags.amenity==="marketplace")return 5;
+  if(tags.shop==="bakery")return 5;
+  return 0;
+}
+
+function calculateNature(tags,type){
+  let score=0;
+  if(tags.leisure==="park")score=5;
+  if(tags.leisure==="garden")score=5;
+  if(tags.leisure==="nature_reserve")score=5;
+  if(tags.natural)score=Math.max(score,4);
+  if(tags.tourism==="viewpoint")score=Math.max(score,4);
+  return score;
+}
+
+function calculateArchitecture(tags,type){
+  let score=0;
+  if(tags.architect)score+=3;
+  if(tags.building)score+=1;
+  if(tags.historic)score+=2;
+  if(tags.tourism==="museum")score+=1;
+  return Math.min(5,score);
+}
+
+function estimateTouristiness(tags,type){
+  let score=1;
+  if(tags.wikipedia)score+=1;
+  if(tags.wikidata)score+=1;
+  if(tags.tourism==="attraction")score+=2;
+  if(tags.tourism==="museum")score+=1;
+  if(tags.tourism==="viewpoint")score+=1;
+  if(tags.historic==="monument")score+=1;
+  return Math.min(5,score);
+}
+
+function deduplicatePlaces(places){
+  const result=[];
+  for(const place of places){
+    if(!result.some(existing=>haversineKm(existing,place)<.035)){
+      result.push(place);
+    }
+  }
+  return result;
+}
+
 function scorePlace(place,prefs){
-let score=0;
-score+=place.interest*prefs.interest;
-score+=place.quirky*prefs.quirky;
-score+=place.history*prefs.history;
-score+=place.food*prefs.food;
-score+=place.nature*prefs.nature;
-score+=place.architecture*prefs.architecture;
-score+=place.local*prefs.local;
-score-=place.touristiness*prefs.touristPenalty*.5;
-if(prefs.keywords.length){
-const haystack=`${place.name} ${place.description} ${Object.values(place.tags).join(" ")}`.toLowerCase();
-for(const keyword of prefs.keywords)if(haystack.includes(keyword))score+=1.5;
+  let score=0;
+  score+=place.interest*prefs.interest;
+  score+=place.quirky*prefs.quirky;
+  score+=place.history*prefs.history;
+  score+=place.food*prefs.food;
+  score+=place.nature*prefs.nature;
+  score+=place.architecture*prefs.architecture;
+  score+=place.local*prefs.local;
+  score-=place.touristiness*prefs.touristPenalty*.5;
+  return score;
 }
-return score;
-}
+
 function rankCandidates(places,start,prefs){
-return places.map(place=>{
-const distance=haversineKm(start,place);
-return{place,distance,score:scorePlace(place,prefs)-.35*distance};
-}).sort((a,b)=>b.score-a.score);
+  return places
+    .map(place=>{
+      const distance=haversineKm(start,place);
+      return{
+        place,
+        distance,
+        score:scorePlace(place,prefs)-.25*distance
+      };
+    })
+    .sort((a,b)=>b.score-a.score);
 }
-function buildCandidateRoute(start,candidates,distance,seed){
-const random=seededRandom(`${seed}|${state.searchSeed}|${start.lat},${start.lon}`);
-const minStops=distance.stops[0];
-const maxStops=distance.stops[1];
-const selected=[];
-const used=new Set();
-let current=start;
-let travelled=0;
-const pool=candidates.slice(0,Math.min(candidates.length,55));
-while(selected.length<maxStops){
-const options=pool.filter(candidate=>!used.has(candidate.place.id)).map(candidate=>{
-const toCandidate=haversineKm(current,candidate.place);
-const backToStart=haversineKm(candidate.place,start);
-let score=candidate.score;
-const projected=travelled+toCandidate+backToStart;
-if(projected>distance.target*1.4)score-=5*(projected-distance.target*1.4);
-if(selected.length&&selected[selected.length-1].category===candidate.place.category)score-=1.5;
-if(selected.some(p=>haversineKm(p,candidate.place)<.2))score-=3;
-score+=random()*2;
-return{...candidate,score};
-}).sort((a,b)=>b.score-a.score);
-if(!options.length)break;
-const shortlist=options.slice(0,Math.min(7,options.length));
-const choice=shortlist[Math.floor(random()*shortlist.length)];
-if(!choice)break;
-selected.push(choice.place);
-used.add(choice.place.id);
-travelled+=haversineKm(current,choice.place);
-current=choice.place;
-const remaining=haversineKm(current,start);
-if(selected.length>=minStops&&travelled+remaining>=distance.target*.82)break;
+
+function hashString(value){
+  let hash=2166136261;
+  for(let i=0;i<value.length;i++){
+    hash^=value.charCodeAt(i);
+    hash=Math.imul(hash,16777619);
+  }
+  return hash>>>0;
 }
-return selected;
+
+function seededRandom(seed){
+  let value=hashString(seed);
+  return function(){
+    value+=1831565813;
+    let t=value;
+    t=Math.imul(t^t>>>15,1|t);
+    t^=t+Math.imul(t^t>>>7,61|t);
+    return((t^t>>>14)>>>0)/4294967296;
+  };
 }
+
+function buildCandidateRoute(start,candidates,distanceConfig,seed){
+  const random=seededRandom(
+    `${state.searchId}|${start.lat}|${start.lon}|${seed}|${Date.now()}`
+  );
+  const minStops=distanceConfig.stops[0];
+  const maxStops=distanceConfig.stops[1];
+  const chosen=[];
+  const used=new Set();
+  let current=start;
+
+  const pool=candidates
+    .slice(0,Math.min(candidates.length,50))
+    .sort(()=>random()-.5);
+
+  for(let guard=0;guard<100&&chosen.length<maxStops;guard++){
+    const available=pool.filter(item=>!used.has(item.place.id));
+
+    if(!available.length)break;
+
+    const scored=available.map(item=>{
+      const toPlace=haversineKm(current,item.place);
+      const home=haversineKm(item.place,start);
+      const estimated=toPlace+home;
+
+      let score=item.score;
+
+      if(estimated>distanceConfig.maxKm*.75)
+        score-=Math.max(0,estimated-distanceConfig.maxKm*.75)*4;
+
+      if(
+        chosen.length&&
+        chosen[chosen.length-1].category===item.place.category
+      )score-=1.5;
+
+      score+=random()*2;
+
+      return{
+        item,
+        score
+      };
+    }).sort((a,b)=>b.score-a.score);
+
+    const shortlist=scored.slice(0,Math.min(8,scored.length));
+    if(!shortlist.length)break;
+
+    const selected=shortlist[Math.floor(random()*shortlist.length)];
+    chosen.push(selected.item.place);
+    used.add(selected.item.place.id);
+    current=selected.item.place;
+
+    if(chosen.length>=minStops&&random()>.35)break;
+  }
+
+  return chosen;
+}
+
 function routeDistance(start,stops){
-if(!stops.length)return 0;
-let total=haversineKm(start,stops[0]);
-for(let i=0;i<stops.length-1;i++)total+=haversineKm(stops[i],stops[i+1]);
-return total+haversineKm(stops[stops.length-1],start);
+  if(!stops.length)return 0;
+  let total=haversineKm(start,stops[0]);
+  for(let i=0;i<stops.length-1;i++){
+    total+=haversineKm(stops[i],stops[i+1]);
+  }
+  total+=haversineKm(stops[stops.length-1],start);
+  return total;
 }
+
 function improveRoute(start,stops){
-if(stops.length<3)return stops;
-let best=stops.slice();
-let bestDistance=routeDistance(start,best);
-let improved=true;
-let iterations=0;
-while(improved&&iterations<12){
-improved=false;
-iterations++;
-for(let i=0;i<best.length-1;i++){
-for(let j=i+1;j<best.length;j++){
-const candidate=best.slice(0,i).concat(best.slice(i,j+1).reverse(),best.slice(j+1));
-const distance=routeDistance(start,candidate);
-if(distance<bestDistance-.01){
-best=candidate;
-bestDistance=distance;
-improved=true;
+  if(stops.length<3)return stops;
+  let best=stops.slice();
+  let bestDistance=routeDistance(start,best);
+  let improved=true;
+  let iterations=0;
+
+  while(improved&&iterations<15){
+    improved=false;
+    iterations++;
+
+    for(let i=0;i<best.length-1;i++){
+      for(let j=i+1;j<best.length;j++){
+        const candidate=
+          best.slice(0,i)
+            .concat(best.slice(i,j+1).reverse())
+            .concat(best.slice(j+1));
+
+        const distance=routeDistance(start,candidate);
+
+        if(distance<bestDistance-.01){
+          best=candidate;
+          bestDistance=distance;
+          improved=true;
+        }
+      }
+    }
+  }
+
+  return best;
 }
-}
-}
-}
-return best;
-}
+
 function routeOverlap(a,b){
-const ids=new Set(a.map(place=>place.id));
-return b.filter(place=>ids.has(place.id)).length/Math.min(a.length,b.length);
+  if(!a.length||!b.length)return 0;
+  const ids=new Set(a.map(x=>x.id));
+  return b.filter(x=>ids.has(x.id)).length/Math.min(a.length,b.length);
 }
+
 function generateWalkCandidates(start,places,prefs,distanceKey){
-const distance=DISTANCES[distanceKey];
-const ranked=rankCandidates(places,start,prefs);
-const candidates=[];
-for(let i=0;i<18;i++){
-let stops=buildCandidateRoute(start,ranked,distance,i);
-if(stops.length<distance.stops[0])continue;
-stops=improveRoute(start,stops);
-const actualDistance=routeDistance(start,stops);
-const placeScore=stops.reduce((sum,place)=>sum+scorePlace(place,prefs),0);
-const categoryCount=new Set(stops.map(place=>place.category)).size;
-const distancePenalty=1.2*Math.abs(actualDistance-distance.target);
-candidates.push({stops,distance:actualDistance,score:placeScore+2*categoryCount-distancePenalty});
+  const config=DISTANCES[distanceKey];
+  const ranked=rankCandidates(places,start,prefs);
+  const candidates=[];
+
+  for(let i=0;i<30;i++){
+    let stops=buildCandidateRoute(
+      start,
+      ranked,
+      config,
+      `${state.searchId}-${i}`
+    );
+
+    if(stops.length<config.stops[0])continue;
+
+    stops=improveRoute(start,stops);
+
+    const geometricDistance=routeDistance(start,stops);
+
+    if(
+      geometricDistance<config.minKm*.55||
+      geometricDistance>config.maxKm*1.35
+    )continue;
+
+    candidates.push({
+      stops,
+      geometricDistance,
+      score:stops.reduce(
+        (sum,place)=>sum+scorePlace(place,prefs),
+        0
+      )
+    });
+  }
+
+  return candidates
+    .sort((a,b)=>b.score-a.score)
+    .filter((candidate,index,array)=>{
+      return !array
+        .slice(0,index)
+        .some(existing=>routeOverlap(existing.stops,candidate.stops)>.6);
+    })
+    .slice(0,8);
 }
-candidates.sort((a,b)=>b.score-a.score);
-const result=[];
-for(const candidate of candidates){
-if(result.length>=CONFIG.routesToGenerate)break;
-if(!result.some(existing=>routeOverlap(existing.stops,candidate.stops)>.55))result.push(candidate);
-}
-return result;
-}
+
 async function fetchWalkingRoute(start,stops){
-const coordinates=[start,...stops,start].map(point=>`${point.lon},${point.lat}`).join(";");
-const url=`${CONFIG.routing}/${coordinates}?overview=full&geometries=geojson`;
-const response=await fetchWithTimeout(url,{headers:{Accept:"application/json"}},20000);
-if(!response.ok)throw new Error("Walking route request failed.");
-const data=await response.json();
-if(!data.routes||!data.routes.length)throw new Error("No walking route returned.");
-const route=data.routes[0];
-const distanceKm=route.distance/1000;
-const walkingMin=distanceKm/3.8*60;
-const stopMin=stops.reduce((sum,stop)=>sum+estimateVisitTime(stop),0);
-const wanderAllowance=.1*(walkingMin+stopMin);
-return{
-coordsLatLng:route.geometry.coordinates.map(coord=>[coord[1],coord[0]]),
-distanceKm,
-walkingMin,
-stopMin,
-wanderAllowance,
-durationMin:walkingMin+stopMin+wanderAllowance,
-approximate:false
-};
+  const coordinates=[start,...stops,start]
+    .map(place=>`${place.lon},${place.lat}`)
+    .join(";");
+
+  const url=
+    `${CONFIG.routing}/${coordinates}`+
+    "?overview=full&geometries=geojson";
+
+  const response=await fetchWithTimeout(
+    url,
+    {headers:{Accept:"application/json"}},
+    20000
+  );
+
+  if(!response.ok)throw new Error("Walking route request failed.");
+
+  const data=await response.json();
+
+  if(!data.routes||!data.routes.length)
+    throw new Error("No walking route returned.");
+
+  const route=data.routes[0];
+  const distanceKm=route.distance/1000;
+  const walkingMin=route.duration/60;
+  const stopMin=stops.reduce(
+    (sum,stop)=>sum+estimateVisitTime(stop),
+    0
+  );
+  const wanderAllowance=.1*(walkingMin+stopMin);
+
+  return{
+    coordsLatLng:route.geometry.coordinates.map(
+      coordinate=>[coordinate[1],coordinate[0]]
+    ),
+    distanceKm,
+    walkingMin,
+    stopMin,
+    wanderAllowance,
+    durationMin:walkingMin+stopMin+wanderAllowance,
+    approximate:false
+  };
 }
+
 function estimateVisitTime(place){
-if(place.category==="food")return 10;
-if(place.type.label==="Museum")return 30;
-if(place.category==="culture"||place.category==="history")return 15;
-return 8;
+  if(place.type?.category==="food")return 10;
+  if(place.type?.label==="Museum")return 30;
+  if(
+    place.type?.category==="culture"||
+    place.type?.category==="history"
+  )return 15;
+  return 8;
 }
+
 function fallbackRoute(start,stops){
-const points=[start,...stops,start];
-let distance=0;
-for(let i=0;i<points.length-1;i++)distance+=haversineKm(points[i],points[i+1]);
-const distanceKm=distance*1.35;
-const walkingMin=distanceKm/3.8*60;
-const stopMin=stops.reduce((sum,stop)=>sum+estimateVisitTime(stop),0);
-return{
-coordsLatLng:points.map(point=>[point.lat,point.lon]),
-distanceKm,
-walkingMin,
-stopMin,
-durationMin:walkingMin+stopMin,
-approximate:true
-};
+  const points=[start,...stops,start];
+  let distance=0;
+
+  for(let i=0;i<points.length-1;i++){
+    distance+=haversineKm(points[i],points[i+1]);
+  }
+
+  const estimatedDistance=distance*1.35;
+  const walkingMin=estimatedDistance/3.8*60;
+  const stopMin=stops.reduce(
+    (sum,stop)=>sum+estimateVisitTime(stop),
+    0
+  );
+
+  return{
+    coordsLatLng:points.map(point=>[point.lat,point.lon]),
+    distanceKm:estimatedDistance,
+    walkingMin,
+    stopMin,
+    durationMin:walkingMin+stopMin,
+    approximate:true
+  };
 }
-const TITLE_ADJECTIVES=["The Unmarked","The Curious","The Slightly Odd","The Overlooked","The Long Way","The Sideways","The Hidden","The Unplanned","The Good Detour"];
-const TITLE_NOUNS=["Wander","Circuit","Detour","Corners","Route","Loop","Afternoon"];
+
+async function buildRoutableWalks(start,candidates,distanceKey){
+  const config=DISTANCES[distanceKey];
+  const results=[];
+
+  for(let i=0;i<candidates.length;i++){
+    if(results.length>=CONFIG.routesToGenerate)break;
+
+    const candidate=candidates[i];
+
+    try{
+      const geo=await fetchWalkingRoute(
+        start,
+        candidate.stops
+      );
+
+      /*
+       * THIS IS THE IMPORTANT CHANGE.
+       * The actual walking route determines whether
+       * the walk is acceptable.
+       */
+      if(
+        geo.distanceKm<config.minKm||
+        geo.distanceKm>config.maxKm
+      ){
+        console.log(
+          "Rejected route outside distance band:",
+          geo.distanceKm.toFixed(1),
+          "km"
+        );
+        continue;
+      }
+
+      results.push({
+        ...candidate,
+        geo
+      });
+    }catch(error){
+      console.warn("Walking router failed:",error);
+    }
+  }
+
+  return results;
+}
+
+const TITLE_ADJECTIVES=[
+  "The Unmarked",
+  "The Curious",
+  "The Slightly Odd",
+  "The Overlooked",
+  "The Long Way",
+  "The Sideways",
+  "The Hidden",
+  "The Unplanned",
+  "The Good Detour"
+];
+
+const TITLE_NOUNS=[
+  "Wander",
+  "Circuit",
+  "Detour",
+  "Corners",
+  "Route",
+  "Loop",
+  "Afternoon"
+];
+
 function generateNarrative(stops,prefs,seed){
-const random=seededRandom(stops.map(place=>place.id).join("|")+seed+state.searchSeed);
-const title=`${TITLE_ADJECTIVES[Math.floor(random()*TITLE_ADJECTIVES.length)]} ${TITLE_NOUNS[Math.floor(random()*TITLE_NOUNS.length)]}`;
-let narrative;
-if(prefs.food>1)narrative="This one leaves room for a coffee, a snack or an entirely unnecessary pastry along the way.";
-else if(prefs.history>1)narrative="The route keeps pulling you toward the bits of the city where the present hasn't quite erased the past.";
-else if(prefs.nature>1)narrative="It looks for pockets of green and places where the city briefly gives way to something quieter.";
-else if(prefs.quirky>1)narrative="This is the route for the things that make you stop and think, 'Why is that here?'";
-else if(prefs.architecture>1)narrative="Rather than chasing the obvious sights, this one reads the city through the things people built.";
-else narrative="There isn't a grand theme here so much as a trail of things that look worth investigating.";
-const first=stops[0]?.name||"the starting point";
-const last=stops[stops.length-1]?.name||"somewhere nearby";
-const categories=[...new Set(stops.map(place=>place.category))].slice(0,3).join(", ");
-return{title,narrative:`${narrative} Starting with ${first}, it wanders through ${categories} before looping back via ${last}.`};
+  const random=seededRandom(
+    stops.map(place=>place.id).join("|")+seed
+  );
+
+  const title=
+    TITLE_ADJECTIVES[
+      Math.floor(random()*TITLE_ADJECTIVES.length)
+    ]+
+    " "+
+    TITLE_NOUNS[
+      Math.floor(random()*TITLE_NOUNS.length)
+    ];
+
+  const categories=new Set(
+    stops.map(place=>place.category)
+  );
+
+  let narrative;
+
+  if(prefs.food>1){
+    narrative=
+      "This one leaves room for a coffee, a snack or an entirely unnecessary pastry along the way.";
+  }else if(prefs.history>1){
+    narrative=
+      "The route keeps pulling you toward the bits of the city where the present hasn't quite erased the past.";
+  }else if(prefs.nature>1){
+    narrative=
+      "It looks for pockets of green and places where the city briefly gives way to something quieter.";
+  }else if(prefs.quirky>1){
+    narrative=
+      "This is the route for the things that make you stop and think, 'Why is that here?'";
+  }else if(prefs.architecture>1){
+    narrative=
+      "Rather than chasing the obvious sights, this one reads the city through the things people built.";
+  }else{
+    narrative=
+      "There isn't a grand theme here so much as a trail of things that look worth investigating.";
+  }
+
+  const first=stops[0]?.name||"the starting point";
+  const last=stops[stops.length-1]?.name||"somewhere nearby";
+  const categoryText=[...categories].slice(0,3).join(", ");
+
+  return{
+    title,
+    narrative:
+      `${narrative} Starting with ${first}, it wanders through ${categoryText} before looping back via ${last}.`
+  };
 }
+
 function walkScores(stops){
-if(!stops.length)return{interesting:"0.0",local:"0.0",quirky:"0.0"};
-const average=key=>stops.reduce((sum,place)=>sum+(place[key]||0),0)/stops.length;
-return{
-interesting:Math.min(10,2*average("interest")).toFixed(1),
-local:Math.min(10,Math.max(0,2*(5-average("touristiness")))).toFixed(1),
-quirky:Math.min(10,2*average("quirky")).toFixed(1)
-};
+  if(!stops.length){
+    return{
+      interesting:"0.0",
+      local:"0.0",
+      quirky:"0.0"
+    };
+  }
+
+  const average=key=>
+    stops.reduce(
+      (sum,place)=>sum+(place[key]||0),
+      0
+    )/stops.length;
+
+  return{
+    interesting:Math.min(10,2*average("interest")).toFixed(1),
+    local:Math.min(
+      10,
+      Math.max(
+        0,
+        2*(5-average("touristiness"))
+      )
+    ).toFixed(1),
+    quirky:Math.min(
+      10,
+      2*average("quirky")
+    ).toFixed(1)
+  };
 }
+
 function fmtDuration(minutes){
-const hours=Math.floor(minutes/60);
-const mins=Math.round(minutes%60);
-return hours?`${hours}h ${mins}m`:`${mins}m`;
+  const hours=Math.floor(minutes/60);
+  const mins=Math.round(minutes%60);
+  return hours>0
+    ?`${hours}h ${mins}m`
+    :`${mins}m`;
 }
+
 function renderWalkOnMap(walk){
-clearMapLayers();
-document.getElementById("emptyState").style.display="none";
-renderStartMarker(walk.start);
-if(walk.geo?.coordsLatLng?.length>1){
-const line=L.polyline(walk.geo.coordsLatLng,{color:walk.geo.approximate?"#FF6B4A":"#1E7A5F",weight:4,opacity:.85,dashArray:walk.geo.approximate?"6,6":null}).addTo(routeLayer);
-map.fitBounds(line.getBounds(),{padding:[60,60]});
+  clearMapLayers();
+  document.getElementById("emptyState").style.display="none";
+  renderStartMarker(walk.start);
+
+  if(
+    walk.geo&&
+    walk.geo.coordsLatLng&&
+    walk.geo.coordsLatLng.length>1
+  ){
+    const line=L.polyline(
+      walk.geo.coordsLatLng,
+      {
+        color:walk.geo.approximate?"#FF6B4A":"#1E7A5F",
+        weight:4,
+        opacity:.85,
+        dashArray:walk.geo.approximate?"6,6":null
+      }
+    ).addTo(routeLayer);
+
+    map.fitBounds(
+      line.getBounds(),
+      {padding:[60,60]}
+    );
+  }
+
+  walk.stops.forEach((stop,index)=>{
+    const marker=L.marker(
+      [stop.lat,stop.lon],
+      {
+        icon:L.divIcon({
+          className:"",
+          html:`<div class="stop-marker">${index+1}</div>`,
+          iconSize:[28,28],
+          iconAnchor:[14,14]
+        })
+      }
+    )
+    .bindPopup(
+      `<b>${index+1}. ${escapeHtml(stop.name)}</b>`+
+      `<br>${escapeHtml(stop.description)}`
+    )
+    .addTo(routeLayer);
+
+    stopMarkers.push(marker);
+  });
 }
-walk.stops.forEach((stop,index)=>{
-const marker=L.marker([stop.lat,stop.lon],{icon:L.divIcon({className:"",html:`<div class="stop-marker">${index+1}</div>`,iconSize:[28,28],iconAnchor:[14,14]})}).bindPopup(`<b>${index+1}. ${escapeHtml(stop.name)}</b><br>${escapeHtml(stop.description)}`).addTo(routeLayer);
-stopMarkers.push(marker);
-});
-}
+
 function escapeHtml(value){
-return String(value).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");
+  return String(value)
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;")
+    .replace(/'/g,"&#039;");
 }
+
 function flyToStop(index){
-const marker=stopMarkers[index];
-if(marker){
-map.flyTo(marker.getLatLng(),17,{duration:.6});
-marker.openPopup();
+  const marker=stopMarkers[index];
+  if(!marker)return;
+  map.flyTo(
+    marker.getLatLng(),
+    17,
+    {duration:.6}
+  );
+  marker.openPopup();
 }
-}
+
 function buildUI(){
-const distanceRow=document.getElementById("distanceRow");
-Object.entries(DISTANCES).forEach(([key,distance])=>{
-const option=document.createElement("div");
-option.className=`distance-opt${key===state.distance?" active":""}`;
-option.innerHTML=`<strong>${distance.label}</strong>${distance.sub}`;
-option.onclick=()=>{
-state.distance=key;
-document.querySelectorAll(".distance-opt").forEach(el=>el.classList.remove("active"));
-option.classList.add("active");
-};
-distanceRow.appendChild(option);
-});
-const quickPurposes=document.getElementById("quickPurposes");
-QUICK_PURPOSES.forEach(purpose=>{
-const chip=document.createElement("div");
-chip.className="purpose-chip";
-chip.textContent=purpose;
-chip.onclick=()=>{
-document.querySelectorAll(".purpose-chip").forEach(el=>el.classList.remove("active"));
-chip.classList.add("active");
-document.getElementById("purposeInput").value=purpose==="Surprise me"?"Surprise me with something interesting and unexpected.":purpose;
-};
-quickPurposes.appendChild(chip);
-});
-document.getElementById("locationButton").onclick=useCurrentLocation;
-document.getElementById("generateBtn").onclick=handleGenerate;
+  const distanceRow=document.getElementById("distanceRow");
+
+  Object.entries(DISTANCES).forEach(([key,config])=>{
+    const option=document.createElement("div");
+    option.className=
+      "distance-opt"+
+      (key===state.distance?" active":"");
+
+    option.innerHTML=
+      `<strong>${config.label}</strong>`+
+      config.sub;
+
+    option.onclick=()=>{
+      state.distance=key;
+      document
+        .querySelectorAll(".distance-opt")
+        .forEach(item=>item.classList.remove("active"));
+      option.classList.add("active");
+    };
+
+    distanceRow.appendChild(option);
+  });
+
+  const purposes=document.getElementById("quickPurposes");
+
+  QUICK_PURPOSES.forEach(purpose=>{
+    const chip=document.createElement("div");
+    chip.className="purpose-chip";
+    chip.textContent=purpose;
+
+    chip.onclick=()=>{
+      document
+        .querySelectorAll(".purpose-chip")
+        .forEach(item=>item.classList.remove("active"));
+
+      chip.classList.add("active");
+
+      document.getElementById("purposeInput").value=
+        purpose==="Surprise me"
+          ?"Surprise me with something interesting and unexpected."
+          :purpose;
+    };
+
+    purposes.appendChild(chip);
+  });
+
+  document.getElementById("locationButton").onclick=
+    useCurrentLocation;
+
+  document.getElementById("generateBtn").onclick=
+    handleGenerate;
 }
+
 async function useCurrentLocation(){
-const button=document.getElementById("locationButton");
-const help=document.getElementById("locationHelp");
-button.disabled=true;
-help.textContent="Finding you…";
-try{
-const location=await getCurrentLocation();
-state.start=location;
-state.startText=location.displayName;
-document.getElementById("startInput").value="Your current location";
-help.textContent="Location acquired. Generate a wander whenever you're ready.";
-map.setView([location.lat,location.lon],15);
-renderStartMarker(location);
-}catch(error){
-help.textContent=error.message;
-}finally{
-button.disabled=false;
+  const button=document.getElementById("locationButton");
+  const help=document.getElementById("locationHelp");
+
+  button.disabled=true;
+  help.textContent="Finding you…";
+
+  try{
+    const location=await getCurrentLocation();
+
+    state.start=location;
+    state.startText=location.displayName;
+
+    document.getElementById("startInput").value=
+      "Your current location";
+
+    help.textContent=
+      "Location acquired. Generate a wander whenever you're ready.";
+
+    map.setView(
+      [location.lat,location.lon],
+      15
+    );
+
+    renderStartMarker(location);
+  }catch(error){
+    help.textContent=error.message;
+  }finally{
+    button.disabled=false;
+  }
 }
-}
+
 async function resolveStart(){
-const input=document.getElementById("startInput").value.trim();
-if(state.start&&input==="Your current location")return state.start;
-if(input)return geocode(input);
-return getCurrentLocation();
+  const input=
+    document.getElementById("startInput")
+      .value.trim();
+
+  if(
+    state.start&&
+    input==="Your current location"
+  ){
+    return state.start;
+  }
+
+  if(input)return geocode(input);
+
+  return getCurrentLocation();
 }
-function setStatus(message,warning=false){
-const status=document.getElementById("statusNote");
-status.textContent=message||"";
-status.className=`status-note${warning?" warn":""}`;
+
+function setStatus(message,warn=false){
+  const element=
+    document.getElementById("statusNote");
+
+  element.textContent=message||"";
+  element.className=
+    "status-note"+
+    (warn?" warn":"");
 }
+
 async function handleGenerate(){
-const button=document.getElementById("generateBtn");
-button.disabled=true;
-document.getElementById("walksContainer").innerHTML="";
-document.getElementById("detailPanel").classList.remove("open");
-state.currentWalks=[];
-state.selectedWalk=null;
-state.searchSeed=Date.now()+Math.floor(Math.random()*1000000);
-try{
-setStatus("Finding your starting point…");
-const start=await resolveStart();
-state.start=start;
-map.setView([start.lat,start.lon],15);
-renderStartMarker(start);
-const purpose=document.getElementById("purposeInput").value.trim();
-state.purpose=purpose;
-state.preferences=interpretPurpose(purpose);
-const distance=DISTANCES[state.distance];
-setStatus("Looking around you for interesting places…");
-const places=await discoverPlaces(start,distance.radius,state.preferences);
-if(places.length<distance.stops[0])throw new Error("There aren't enough mapped places nearby to build a good walk. Try a longer distance or a different mood.");
-setStatus(`Found ${places.length} possible places. Building some wanders…`);
-const candidates=generateWalkCandidates(start,places,state.preferences,state.distance);
-if(!candidates.length)throw new Error("I found places nearby, but couldn't combine them into a sensible walking loop. Try increasing the distance.");
-const walks=[];
-for(let i=0;i<candidates.length;i++){
-setStatus(`Walking route ${i+1} of ${candidates.length}…`);
-const candidate=candidates[i];
-let geo;
-try{
-geo=await fetchWalkingRoute(start,candidate.stops);
-}catch(error){
-console.warn("Walking router failed:",error);
-geo=fallbackRoute(start,candidate.stops);
+  const button=document.getElementById("generateBtn");
+
+  button.disabled=true;
+
+  document.getElementById("walksContainer").innerHTML="";
+  document
+    .getElementById("detailPanel")
+    .classList.remove("open");
+
+  state.currentWalks=[];
+  state.selectedWalk=null;
+  state.searchId++;
+
+  try{
+    setStatus("Finding your starting point…");
+
+    const start=await resolveStart();
+
+    state.start=start;
+
+    map.setView(
+      [start.lat,start.lon],
+      15
+    );
+
+    renderStartMarker(start);
+
+    const purpose=
+      document.getElementById("purposeInput")
+        .value.trim();
+
+    state.purpose=purpose;
+    state.preferences=
+      interpretPurpose(purpose);
+
+    const preferences=state.preferences;
+    const distanceConfig=DISTANCES[state.distance];
+
+    setStatus(
+      "Looking around you for interesting places…"
+    );
+
+    const places=await discoverPlaces(
+      start,
+      distanceConfig.radius*
+      CONFIG.discoveryRadiusMultiplier
+    );
+
+    if(places.length<distanceConfig.stops[0]){
+      throw new Error(
+        "There aren't enough mapped places nearby to build a good walk. Try a longer distance."
+      );
+    }
+
+    setStatus(
+      `Found ${places.length} places. Testing possible wanders…`
+    );
+
+    const candidates=
+      generateWalkCandidates(
+        start,
+        places,
+        preferences,
+        state.distance
+      );
+
+    if(!candidates.length){
+      throw new Error(
+        "I found places nearby, but couldn't build a sensible loop. Try increasing the distance."
+      );
+    }
+
+    setStatus(
+      "Checking the actual walking distances…"
+    );
+
+    const routed=
+      await buildRoutableWalks(
+        start,
+        candidates,
+        state.distance
+      );
+
+    if(!routed.length){
+      throw new Error(
+        `I couldn't find a route that fits the selected ${distanceConfig.sub} distance. Try a different starting point or a different distance.`
+      );
+    }
+
+    const walks=[];
+
+    routed.forEach((candidate,index)=>{
+      const narrative=
+        generateNarrative(
+          candidate.stops,
+          preferences,
+          `${state.searchId}-${index}`
+        );
+
+      walks.push({
+        title:narrative.title,
+        narrative:narrative.narrative,
+        stops:candidate.stops,
+        start,
+        geo:candidate.geo,
+        scores:walkScores(candidate.stops)
+      });
+    });
+
+    state.currentWalks=walks;
+
+    renderWalkCards(walks);
+    selectWalk(0);
+
+    setStatus(
+      `Discovered ${places.length} places and built ${walks.length} walks.`
+    );
+  }catch(error){
+    console.error(error);
+    setStatus(
+      error.message||"Something went wrong.",
+      true
+    );
+  }finally{
+    button.disabled=false;
+  }
 }
-const narrative=generateNarrative(candidate.stops,state.preferences,i);
-walks.push({
-title:narrative.title,
-narrative:narrative.narrative,
-stops:candidate.stops,
-start,
-geo,
-scores:walkScores(candidate.stops)
-});
-}
-state.currentWalks=walks;
-renderWalkCards(walks);
-selectWalk(0);
-setStatus(`Discovered ${places.length} places and built ${walks.length} walks.`);
-}catch(error){
-console.error(error);
-setStatus(error.message||"Something went wrong.",true);
-}finally{
-button.disabled=false;
-}
-}
+
 function renderWalkCards(walks){
-const container=document.getElementById("walksContainer");
-container.innerHTML='<div class="section-eyebrow">Suggested walks</div>';
-walks.forEach((walk,index)=>{
-const card=document.createElement("div");
-card.className="walk-card";
-card.innerHTML=`
-<p class="wc-title">${escapeHtml(walk.title)}</p>
-<p class="wc-narrative">${escapeHtml(walk.narrative)}</p>
-<div class="wc-meta">
-<span>${walk.geo.distanceKm.toFixed(1)} km</span>
-<span>·</span>
-<span>${fmtDuration(walk.geo.durationMin)}</span>
-<span>·</span>
-<span>${walk.stops.length} stops</span>
-${walk.geo.approximate?'<span>·</span><span>estimated route</span>':""}
-</div>
-<div class="wc-scores">
-<div class="wc-score"><div class="num">${walk.scores.interesting}</div><div class="lbl">Interesting</div></div>
-<div class="wc-score"><div class="num">${walk.scores.local}</div><div class="lbl">Local</div></div>
-<div class="wc-score"><div class="num">${walk.scores.quirky}</div><div class="lbl">Quirky</div></div>
-</div>`;
-card.onclick=()=>selectWalk(index);
-container.appendChild(card);
-});
+  const container=
+    document.getElementById("walksContainer");
+
+  container.innerHTML=
+    `<div class="section-eyebrow">Suggested walks</div>`;
+
+  walks.forEach((walk,index)=>{
+    const card=document.createElement("div");
+
+    card.className="walk-card";
+
+    card.innerHTML=`
+      <p class="wc-title">${escapeHtml(walk.title)}</p>
+      <p class="wc-narrative">${escapeHtml(walk.narrative)}</p>
+      <div class="wc-meta">
+        <span>${walk.geo.distanceKm.toFixed(1)} km</span>
+        <span>·</span>
+        <span>${fmtDuration(walk.geo.durationMin)}</span>
+        <span>·</span>
+        <span>${walk.stops.length} stops</span>
+        ${walk.geo.approximate?`
+          <span>·</span>
+          <span>estimated route</span>
+        `:""}
+      </div>
+      <div class="wc-scores">
+        <div class="wc-score">
+          <div class="num">${walk.scores.interesting}</div>
+          <div class="lbl">Interesting</div>
+        </div>
+        <div class="wc-score">
+          <div class="num">${walk.scores.local}</div>
+          <div class="lbl">Local</div>
+        </div>
+        <div class="wc-score">
+          <div class="num">${walk.scores.quirky}</div>
+          <div class="lbl">Quirky</div>
+        </div>
+      </div>
+    `;
+
+    card.onclick=()=>selectWalk(index);
+
+    container.appendChild(card);
+  });
 }
+
 function selectWalk(index){
-state.selectedWalk=index;
-document.querySelectorAll(".walk-card").forEach((card,i)=>card.classList.toggle("selected",i===index));
-const walk=state.currentWalks[index];
-if(walk){
-renderWalkOnMap(walk);
-renderDetail(walk);
+  state.selectedWalk=index;
+
+  document
+    .querySelectorAll(".walk-card")
+    .forEach((card,i)=>{
+      card.classList.toggle(
+        "selected",
+        i===index
+      );
+    });
+
+  const walk=state.currentWalks[index];
+
+  if(walk){
+    renderWalkOnMap(walk);
+    renderDetail(walk);
+  }
 }
-}
+
 function renderDetail(walk){
-const detail=document.getElementById("detailPanel");
-detail.classList.add("open");
-detail.innerHTML=`
-<div class="section-eyebrow">Walk detail</div>
-<h2>${escapeHtml(walk.title)}</h2>
-<div class="d-meta">${walk.geo.distanceKm.toFixed(1)} km · approximately ${fmtDuration(walk.geo.durationMin)}${walk.geo.approximate?" · estimated":""}</div>
-<p class="d-narrative">${escapeHtml(walk.narrative)}</p>
-<div class="stop-list" id="stopList"></div>`;
-const stopList=document.getElementById("stopList");
-walk.stops.forEach((stop,index)=>{
-const item=document.createElement("div");
-item.className="stop-item";
-item.innerHTML=`
-<div class="stop-num">${String(index+1).padStart(2,"0")}</div>
-<div class="stop-body">
-<div class="stop-name">${escapeHtml(stop.name)}</div>
-<div class="stop-desc">${escapeHtml(stop.description)}</div>
-<div class="source-badge">OpenStreetMap · ${escapeHtml(stop.type.label)}</div>
-</div>`;
-item.onclick=()=>flyToStop(index);
-stopList.appendChild(item);
-});
-detail.scrollIntoView({behavior:"smooth",block:"nearest"});
+  const detail=
+    document.getElementById("detailPanel");
+
+  detail.classList.add("open");
+
+  detail.innerHTML=`
+    <div class="section-eyebrow">Walk detail</div>
+    <h2>${escapeHtml(walk.title)}</h2>
+    <div class="d-meta">
+      ${walk.geo.distanceKm.toFixed(1)} km
+      · approximately
+      ${fmtDuration(walk.geo.durationMin)}
+      ${walk.geo.approximate?" · estimated":""}
+    </div>
+    <p class="d-narrative">
+      ${escapeHtml(walk.narrative)}
+    </p>
+    <div class="stop-list" id="stopList"></div>
+  `;
+
+  const list=
+    document.getElementById("stopList");
+
+  walk.stops.forEach((stop,index)=>{
+    const item=document.createElement("div");
+
+    item.className="stop-item";
+
+    item.innerHTML=`
+      <div class="stop-num">
+        ${String(index+1).padStart(2,"0")}
+      </div>
+      <div class="stop-body">
+        <div class="stop-name">
+          ${escapeHtml(stop.name)}
+        </div>
+        <div class="stop-desc">
+          ${escapeHtml(stop.description)}
+        </div>
+        <div class="source-badge">
+          OpenStreetMap · ${escapeHtml(stop.type.label)}
+        </div>
+      </div>
+    `;
+
+    item.onclick=()=>flyToStop(index);
+
+    list.appendChild(item);
+  });
+
+  detail.scrollIntoView({
+    behavior:"smooth",
+    block:"nearest"
+  });
 }
+
 function init(){
-buildUI();
-initMap();
+  buildUI();
+  initMap();
 }
+
 init();
 </script>
 </body>
