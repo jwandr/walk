@@ -1,4735 +1,744 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Wander Generator 1</title>
-
-<link
-  rel="stylesheet"
-  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-/>
-
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wander Generator</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Inter:ital,wght@0,400;0,500;0,600;1,400;1,500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-
 <style>
-  :root{
-    --ink:#FAF9F4;
-    --panel:#FFFFFF;
-    --panel-raised:#FCFBF7;
-    --cream:#171B18;
-    --cream-dim:#767D72;
-    --gold:#1E7A5F;
-    --gold-soft:#279173;
-    --rust:#FF6B4A;
-    --teal:#4F8B82;
-    --line:rgba(23,27,24,0.08);
-    --line-strong:rgba(23,27,24,0.15);
-  }
-
-  *{box-sizing:border-box;}
-
-  html,body{
-    height:100%;
-  }
-
-  body{
-    margin:0;
-    background:var(--ink);
-    color:var(--cream);
-    font-family:'Inter',sans-serif;
-    overflow:hidden;
-  }
-
-  .app{
-    display:flex;
-    height:100vh;
-    width:100vw;
-  }
-
-  /* =========================================================
-     LEFT PANEL
-  ========================================================= */
-
-  .panel{
-    width:430px;
-    min-width:430px;
-    height:100%;
-    background:var(--panel);
-    box-shadow:
-      1px 0 0 var(--line),
-      4px 0 24px rgba(23,27,24,0.04);
-    display:flex;
-    flex-direction:column;
-    overflow:hidden;
-    z-index:10;
-  }
-
-  .panel-scroll{
-    overflow-y:auto;
-    flex:1;
-    padding:28px 26px 40px;
-  }
-
-  .panel-scroll::-webkit-scrollbar{
-    width:8px;
-  }
-
-  .panel-scroll::-webkit-scrollbar-thumb{
-    background:var(--line-strong);
-    border-radius:4px;
-  }
-
-  .brand{
-    display:flex;
-    align-items:center;
-    gap:12px;
-    margin-bottom:6px;
-  }
-
-  .brand svg{
-    flex-shrink:0;
-  }
-
-  .brand h1{
-    font-family:'Sora',sans-serif;
-    font-weight:600;
-    font-size:25px;
-    letter-spacing:-0.2px;
-    margin:0;
-  }
-
-  .tagline{
-    font-style:italic;
-    color:var(--cream-dim);
-    font-size:14.5px;
-    margin:0 0 28px;
-  }
-
-  label.field-label{
-    display:block;
-    font-family:'IBM Plex Mono',monospace;
-    font-size:10.5px;
-    letter-spacing:1.4px;
-    text-transform:uppercase;
-    color:var(--gold-soft);
-    margin-bottom:8px;
-    margin-top:22px;
-  }
-
-  label.field-label:first-of-type{
-    margin-top:0;
-  }
-
-  /* START LOCATION */
-
-  .location-row{
-    display:flex;
-    gap:8px;
-  }
-
-  input[type="text"]{
-    width:100%;
-    background:var(--ink);
-    border:1px solid var(--line-strong);
-    color:var(--cream);
-    font-family:'Inter',sans-serif;
-    font-size:15px;
-    padding:11px 13px;
-    border-radius:10px;
-    outline:none;
-    transition:border-color .15s ease,box-shadow .15s ease;
-  }
-
-  input[type="text"]:focus{
-    border-color:var(--gold);
-    box-shadow:0 0 0 3px rgba(30,122,95,0.15);
-  }
-
-  input[type="text"]::placeholder{
-    color:var(--cream-dim);
-    opacity:.7;
-  }
-
-  .location-button{
-    flex-shrink:0;
-    border:1px solid var(--line-strong);
-    background:var(--panel);
-    color:var(--gold);
-    border-radius:10px;
-    padding:0 13px;
-    cursor:pointer;
-    font-family:'Sora',sans-serif;
-    font-size:12px;
-    font-weight:500;
-    transition:.15s ease;
-  }
-
-  .location-button:hover{
-    border-color:var(--gold);
-    background:rgba(30,122,95,.06);
-  }
-
-  .location-help{
-    margin-top:7px;
-    color:var(--cream-dim);
-    font-size:11.5px;
-    line-height:1.4;
-  }
-
-  /* DISTANCE */
-
-  .distance-row{
-    display:flex;
-    gap:8px;
-  }
-
-  .distance-opt{
-    flex:1;
-    padding:10px 6px;
-    text-align:center;
-    border:1px solid var(--line-strong);
-    border-radius:10px;
-    cursor:pointer;
-    font-size:12.5px;
-    line-height:1.3;
-    color:var(--cream-dim);
-    transition:all .15s ease;
-    user-select:none;
-  }
-
-  .distance-opt strong{
-    display:block;
-    font-family:'Sora',sans-serif;
-    font-size:16px;
-    color:var(--cream);
-    font-weight:500;
-  }
-
-  .distance-opt:hover{
-    border-color:var(--gold-soft);
-  }
-
-  .distance-opt.active{
-    border-color:var(--gold);
-    background:rgba(30,122,95,0.08);
-    color:var(--cream);
-  }
-
-  /* PURPOSE */
-
-  .purpose-input{
-    min-height:74px;
-    resize:vertical;
-    width:100%;
-    background:var(--ink);
-    border:1px solid var(--line-strong);
-    color:var(--cream);
-    font-family:'Inter',sans-serif;
-    font-size:14px;
-    line-height:1.45;
-    padding:11px 13px;
-    border-radius:10px;
-    outline:none;
-    transition:border-color .15s ease,box-shadow .15s ease;
-  }
-
-  .purpose-input:focus{
-    border-color:var(--gold);
-    box-shadow:0 0 0 3px rgba(30,122,95,0.15);
-  }
-
-  .purpose-input::placeholder{
-    color:var(--cream-dim);
-    opacity:.7;
-  }
-
-  .quick-purposes{
-    display:flex;
-    flex-wrap:wrap;
-    gap:7px;
-    margin-top:9px;
-  }
-
-  .purpose-chip{
-    border:1px solid var(--line-strong);
-    border-radius:999px;
-    padding:6px 10px;
-    font-size:11.5px;
-    color:var(--cream-dim);
-    cursor:pointer;
-    transition:.15s ease;
-    user-select:none;
-  }
-
-  .purpose-chip:hover{
-    border-color:var(--gold-soft);
-    color:var(--cream);
-  }
-
-  .purpose-chip.active{
-    border-color:var(--gold);
-    background:rgba(30,122,95,.08);
-    color:var(--gold);
-  }
-
-  /* GENERATE */
-
-  .generate-btn{
-    width:100%;
-    margin-top:24px;
-    padding:14px;
-    background:var(--gold);
-    color:#fff;
-    border:none;
-    border-radius:10px;
-    font-family:'Sora',sans-serif;
-    font-weight:600;
-    font-size:16px;
-    cursor:pointer;
-    letter-spacing:.1px;
-    box-shadow:0 4px 14px rgba(30,122,95,.28);
-    transition:background .15s ease,
-               transform .1s ease,
-               box-shadow .15s ease;
-  }
-
-  .generate-btn:hover{
-    background:var(--gold-soft);
-    box-shadow:0 6px 18px rgba(30,122,95,.32);
-  }
-
-  .generate-btn:active{
-    transform:scale(.99);
-  }
-
-  .generate-btn:disabled{
-    opacity:.55;
-    cursor:wait;
-  }
-
-  .status-note{
-    font-size:11.5px;
-    color:var(--cream-dim);
-    margin-top:10px;
-    min-height:16px;
-    font-family:'IBM Plex Mono',monospace;
-    line-height:1.4;
-  }
-
-  .status-note.warn{
-    color:var(--rust);
-  }
-
-  /* =========================================================
-     WALK CARDS
-  ========================================================= */
-
-  .walks{
-    margin-top:30px;
-    display:flex;
-    flex-direction:column;
-    gap:14px;
-  }
-
-  .section-eyebrow{
-    font-family:'IBM Plex Mono',monospace;
-    font-size:10.5px;
-    letter-spacing:1.4px;
-    text-transform:uppercase;
-    color:var(--gold-soft);
-    margin-bottom:14px;
-    display:flex;
-    align-items:center;
-    gap:10px;
-  }
-
-  .section-eyebrow::after{
-    content:"";
-    flex:1;
-    height:1px;
-    background:var(--line);
-  }
-
-  .walk-card{
-    background:var(--panel-raised);
-    border:1px solid var(--line);
-    border-left:3px solid transparent;
-    border-radius:14px;
-    padding:16px 18px;
-    cursor:pointer;
-    box-shadow:0 1px 2px rgba(23,27,24,.04);
-    transition:
-      border-color .15s ease,
-      background .15s ease,
-      box-shadow .15s ease,
-      transform .1s ease;
-  }
-
-  .walk-card:hover{
-    border-color:var(--line-strong);
-    box-shadow:0 6px 18px rgba(23,27,24,.08);
-    transform:translateY(-1px);
-  }
-
-  .walk-card.selected{
-    border-left-color:var(--gold);
-    background:rgba(30,122,95,.06);
-    border-color:var(--line-strong);
-    box-shadow:0 6px 18px rgba(23,27,24,.08);
-  }
-
-  .walk-card .wc-title{
-    font-family:'Sora',sans-serif;
-    font-size:19px;
-    font-weight:600;
-    margin:0 0 6px;
-  }
-
-  .walk-card .wc-narrative{
-    font-size:13px;
-    line-height:1.5;
-    color:var(--cream-dim);
-    margin:0 0 12px;
-  }
-
-  .wc-meta{
-    display:flex;
-    gap:12px;
-    font-family:'IBM Plex Mono',monospace;
-    font-size:11.5px;
-    color:var(--gold-soft);
-    margin-bottom:10px;
-    flex-wrap:wrap;
-  }
-
-  .wc-scores{
-    display:flex;
-    gap:16px;
-    padding-top:10px;
-    border-top:1px solid var(--line);
-  }
-
-  .wc-score{
-    text-align:left;
-  }
-
-  .wc-score .num{
-    font-family:'Sora',sans-serif;
-    font-size:17px;
-    color:var(--cream);
-    font-weight:500;
-  }
-
-  .wc-score .lbl{
-    font-size:10px;
-    text-transform:uppercase;
-    letter-spacing:.8px;
-    color:var(--cream-dim);
-  }
-
-  /* =========================================================
-     DETAIL
-  ========================================================= */
-
-  .detail{
-    margin-top:26px;
-    padding-top:22px;
-    border-top:1px solid var(--line-strong);
-    display:none;
-  }
-
-  .detail.open{
-    display:block;
-  }
-
-  .detail h2{
-    font-family:'Sora',sans-serif;
-    font-weight:600;
-    font-size:22px;
-    margin:0 0 6px;
-  }
-
-  .detail .d-meta{
-    font-family:'IBM Plex Mono',monospace;
-    font-size:12px;
-    color:var(--gold-soft);
-    margin-bottom:10px;
-  }
-
-  .detail .d-narrative{
-    font-style:italic;
-    font-size:14.5px;
-    line-height:1.55;
-    color:var(--cream-dim);
-    margin-bottom:20px;
-  }
-
-  .stop-list{
-    display:flex;
-    flex-direction:column;
-  }
-
-  .stop-item{
-    display:flex;
-    gap:14px;
-    padding:13px 0;
-    border-bottom:1px solid var(--line);
-    cursor:pointer;
-  }
-
-  .stop-item:last-child{
-    border-bottom:none;
-  }
-
-  .stop-item:hover .stop-num{
-    background:var(--gold);
-    color:var(--ink);
-  }
-
-  .stop-num{
-    flex-shrink:0;
-    width:28px;
-    height:28px;
-    border-radius:50%;
-    border:1px solid var(--gold);
-    color:var(--gold);
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    font-family:'IBM Plex Mono',monospace;
-    font-size:12px;
-    transition:all .15s ease;
-  }
-
-  .stop-body .stop-name{
-    font-family:'Sora',sans-serif;
-    font-size:15.5px;
-    font-weight:500;
-    margin-bottom:2px;
-  }
-
-  .stop-body .stop-desc{
-    font-size:12.5px;
-    color:var(--cream-dim);
-    line-height:1.4;
-  }
-
-  .source-badge{
-    display:inline-block;
-    margin-top:5px;
-    font-family:'IBM Plex Mono',monospace;
-    font-size:9px;
-    letter-spacing:.5px;
-    text-transform:uppercase;
-    color:var(--cream-dim);
-    opacity:.7;
-  }
-
-  /* =========================================================
-     MAP
-  ========================================================= */
-
-  .map-wrap{
-    flex:1;
-    position:relative;
-    height:100%;
-  }
-
-  #map{
-    height:100%;
-    width:100%;
-    background:#EFEDE6;
-  }
-
-  .leaflet-container{
-    font-family:'Inter',sans-serif;
-  }
-
-  .stop-marker{
-    background:var(--panel);
-    border:2px solid var(--gold);
-    color:var(--cream);
-    border-radius:50%;
-    width:28px;
-    height:28px;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    font-family:'IBM Plex Mono',monospace;
-    font-size:11px;
-    font-weight:500;
-    box-shadow:0 2px 8px rgba(23,27,24,.18);
-  }
-
-  .start-marker{
-    background:var(--rust);
-    border:2px solid #fff;
-    color:var(--cream);
-    border-radius:50%;
-    width:16px;
-    height:16px;
-    box-shadow:
-      0 0 0 6px rgba(255,107,74,.18),
-      0 2px 6px rgba(23,27,24,.2);
-  }
-
-  .leaflet-popup-content-wrapper{
-    background:var(--panel-raised);
-    color:var(--cream);
-    border-radius:12px;
-    box-shadow:0 8px 24px rgba(23,27,24,.14);
-  }
-
-  .leaflet-popup-content{
-    font-family:'Inter',sans-serif;
-    font-size:13px;
-    margin:10px 12px;
-  }
-
-  .leaflet-popup-content b{
-    font-family:'Sora',sans-serif;
-    font-size:14.5px;
-  }
-
-  .leaflet-popup-tip{
-    background:var(--panel-raised);
-  }
-
-  .empty-state{
-    position:absolute;
-    inset:0;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    flex-direction:column;
-    gap:10px;
-    pointer-events:none;
-    text-align:center;
-    padding:40px;
-  }
-
-  .empty-state svg{
-    opacity:.5;
-    margin-bottom:6px;
-  }
-
-  .empty-state h3{
-    font-family:'Sora',sans-serif;
-    font-weight:500;
-    font-size:20px;
-    color:var(--cream-dim);
-    margin:0;
-  }
-
-  .empty-state p{
-    font-size:13px;
-    color:var(--cream-dim);
-    opacity:.7;
-    max-width:300px;
-    margin:0;
-    line-height:1.5;
-  }
-
-  .map-badge{
-    position:absolute;
-    left:18px;
-    bottom:18px;
-    z-index:500;
-    background:rgba(255,255,255,.92);
-    border:1px solid var(--line-strong);
-    border-radius:8px;
-    padding:7px 10px;
-    font-family:'IBM Plex Mono',monospace;
-    font-size:10px;
-    color:var(--cream-dim);
-    box-shadow:0 2px 8px rgba(0,0,0,.08);
-  }
-
-  /* =========================================================
-     LOADING
-  ========================================================= */
-
-  .loading-dot{
-    display:inline-block;
-    animation:pulse 1.2s infinite ease-in-out;
-  }
-
-  @keyframes pulse{
-    0%,100%{opacity:.3}
-    50%{opacity:1}
-  }
-
-  /* =========================================================
-     MOBILE
-  ========================================================= */
-
-  @media(max-width:860px){
-    .app{
-      flex-direction:column;
-    }
-
-    .panel{
-      width:100%;
-      min-width:0;
-      height:58%;
-      order:2;
-      border-right:none;
-      border-top:1px solid var(--line);
-    }
-
-    .map-wrap{
-      height:42%;
-      order:1;
-    }
-  }
+:root{--ink:#FAF9F4;--panel:#FFFFFF;--panel-raised:#FCFBF7;--cream:#171B18;--cream-dim:#767D72;--gold:#1E7A5F;--gold-soft:#279173;--rust:#FF6B4A;--teal:#4F8B82;--line:rgba(23,27,24,.08);--line-strong:rgba(23,27,24,.15)}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--ink);color:var(--cream);font-family:Inter,sans-serif;overflow:hidden}
+.app{display:flex;height:100vh;width:100vw}
+.panel{width:430px;min-width:430px;height:100%;background:var(--panel);box-shadow:1px 0 0 var(--line),4px 0 24px rgba(23,27,24,.04);display:flex;flex-direction:column;overflow:hidden;z-index:10}
+.panel-scroll{overflow-y:auto;flex:1;padding:28px 26px 40px}
+.panel-scroll::-webkit-scrollbar{width:8px}
+.panel-scroll::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:4px}
+.brand{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+.brand svg{flex-shrink:0}
+.brand h1{font-family:Sora,sans-serif;font-weight:600;font-size:25px;letter-spacing:-.2px;margin:0}
+.tagline{font-style:italic;color:var(--cream-dim);font-size:14.5px;margin:0 0 28px}
+label.field-label{display:block;font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--gold-soft);margin-bottom:8px;margin-top:22px}
+label.field-label:first-of-type{margin-top:0}
+.location-row{display:flex;gap:8px}
+input[type=text]{width:100%;background:var(--ink);border:1px solid var(--line-strong);color:var(--cream);font-family:Inter,sans-serif;font-size:15px;padding:11px 13px;border-radius:10px;outline:0;transition:border-color .15s ease,box-shadow .15s ease}
+input[type=text]:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(30,122,95,.15)}
+input[type=text]::placeholder{color:var(--cream-dim);opacity:.7}
+.location-button{flex-shrink:0;border:1px solid var(--line-strong);background:var(--panel);color:var(--gold);border-radius:10px;padding:0 13px;cursor:pointer;font-family:Sora,sans-serif;font-size:12px;font-weight:500;transition:.15s ease}
+.location-button:hover{border-color:var(--gold);background:rgba(30,122,95,.06)}
+.location-help{margin-top:7px;color:var(--cream-dim);font-size:11.5px;line-height:1.4}
+.distance-row{display:flex;gap:8px}
+.distance-opt{flex:1;padding:10px 6px;text-align:center;border:1px solid var(--line-strong);border-radius:10px;cursor:pointer;font-size:12.5px;line-height:1.3;color:var(--cream-dim);transition:all .15s ease;user-select:none}
+.distance-opt strong{display:block;font-family:Sora,sans-serif;font-size:16px;color:var(--cream);font-weight:500}
+.distance-opt:hover{border-color:var(--gold-soft)}
+.distance-opt.active{border-color:var(--gold);background:rgba(30,122,95,.08);color:var(--cream)}
+.purpose-input{min-height:74px;resize:vertical;width:100%;background:var(--ink);border:1px solid var(--line-strong);color:var(--cream);font-family:Inter,sans-serif;font-size:14px;line-height:1.45;padding:11px 13px;border-radius:10px;outline:0;transition:border-color .15s ease,box-shadow .15s ease}
+.purpose-input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(30,122,95,.15)}
+.purpose-input::placeholder{color:var(--cream-dim);opacity:.7}
+.quick-purposes{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
+.purpose-chip{border:1px solid var(--line-strong);border-radius:999px;padding:6px 10px;font-size:11.5px;color:var(--cream-dim);cursor:pointer;transition:.15s ease;user-select:none}
+.purpose-chip:hover{border-color:var(--gold-soft);color:var(--cream)}
+.purpose-chip.active{border-color:var(--gold);background:rgba(30,122,95,.08);color:var(--gold)}
+.generate-btn{width:100%;margin-top:24px;padding:14px;background:var(--gold);color:#fff;border:none;border-radius:10px;font-family:Sora,sans-serif;font-weight:600;font-size:16px;cursor:pointer;letter-spacing:.1px;box-shadow:0 4px 14px rgba(30,122,95,.28);transition:background .15s ease,transform .1s ease,box-shadow .15s ease}
+.generate-btn:hover{background:var(--gold-soft);box-shadow:0 6px 18px rgba(30,122,95,.32)}
+.generate-btn:active{transform:scale(.99)}
+.generate-btn:disabled{opacity:.55;cursor:wait}
+.status-note{font-size:11.5px;color:var(--cream-dim);margin-top:10px;min-height:16px;font-family:'IBM Plex Mono',monospace;line-height:1.4}
+.status-note.warn{color:var(--rust)}
+.walks{margin-top:30px;display:flex;flex-direction:column;gap:14px}
+.section-eyebrow{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--gold-soft);margin-bottom:14px;display:flex;align-items:center;gap:10px}
+.section-eyebrow::after{content:"";flex:1;height:1px;background:var(--line)}
+.walk-card{background:var(--panel-raised);border:1px solid var(--line);border-left:3px solid transparent;border-radius:14px;padding:16px 18px;cursor:pointer;box-shadow:0 1px 2px rgba(23,27,24,.04);transition:border-color .15s ease,background .15s ease,box-shadow .15s ease,transform .1s ease}
+.walk-card:hover{border-color:var(--line-strong);box-shadow:0 6px 18px rgba(23,27,24,.08);transform:translateY(-1px)}
+.walk-card.selected{border-left-color:var(--gold);background:rgba(30,122,95,.06);border-color:var(--line-strong);box-shadow:0 6px 18px rgba(23,27,24,.08)}
+.walk-card .wc-title{font-family:Sora,sans-serif;font-size:19px;font-weight:600;margin:0 0 6px}
+.walk-card .wc-narrative{font-size:13px;line-height:1.5;color:var(--cream-dim);margin:0 0 12px}
+.wc-meta{display:flex;gap:12px;font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--gold-soft);margin-bottom:10px;flex-wrap:wrap}
+.wc-scores{display:flex;gap:16px;padding-top:10px;border-top:1px solid var(--line)}
+.wc-score{text-align:left}
+.wc-score .num{font-family:Sora,sans-serif;font-size:17px;color:var(--cream);font-weight:500}
+.wc-score .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.8px;color:var(--cream-dim)}
+.detail{margin-top:26px;padding-top:22px;border-top:1px solid var(--line-strong);display:none}
+.detail.open{display:block}
+.detail h2{font-family:Sora,sans-serif;font-weight:600;font-size:22px;margin:0 0 6px}
+.detail .d-meta{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--gold-soft);margin-bottom:10px}
+.detail .d-narrative{font-style:italic;font-size:14.5px;line-height:1.55;color:var(--cream-dim);margin-bottom:20px}
+.stop-list{display:flex;flex-direction:column}
+.stop-item{display:flex;gap:14px;padding:13px 0;border-bottom:1px solid var(--line);cursor:pointer}
+.stop-item:last-child{border-bottom:none}
+.stop-item:hover .stop-num{background:var(--gold);color:var(--ink)}
+.stop-num{flex-shrink:0;width:28px;height:28px;border-radius:50%;border:1px solid var(--gold);color:var(--gold);display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:12px;transition:all .15s ease}
+.stop-body .stop-name{font-family:Sora,sans-serif;font-size:15.5px;font-weight:500;margin-bottom:2px}
+.stop-body .stop-desc{font-size:12.5px;color:var(--cream-dim);line-height:1.4}
+.source-badge{display:inline-block;margin-top:5px;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.5px;text-transform:uppercase;color:var(--cream-dim);opacity:.7}
+.map-wrap{flex:1;position:relative;height:100%}
+#map{height:100%;width:100%;background:#efede6}
+.leaflet-container{font-family:Inter,sans-serif}
+.stop-marker{background:var(--panel);border:2px solid var(--gold);color:var(--cream);border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:500;box-shadow:0 2px 8px rgba(23,27,24,.18)}
+.start-marker{background:var(--rust);border:2px solid #fff;color:var(--cream);border-radius:50%;width:16px;height:16px;box-shadow:0 0 0 6px rgba(255,107,74,.18),0 2px 6px rgba(23,27,24,.2)}
+.leaflet-popup-content-wrapper{background:var(--panel-raised);color:var(--cream);border-radius:12px;box-shadow:0 8px 24px rgba(23,27,24,.14)}
+.leaflet-popup-content{font-family:Inter,sans-serif;font-size:13px;margin:10px 12px}
+.leaflet-popup-content b{font-family:Sora,sans-serif;font-size:14.5px}
+.leaflet-popup-tip{background:var(--panel-raised)}
+.empty-state{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;pointer-events:none;text-align:center;padding:40px}
+.empty-state svg{opacity:.5;margin-bottom:6px}
+.empty-state h3{font-family:Sora,sans-serif;font-weight:500;font-size:20px;color:var(--cream-dim);margin:0}
+.empty-state p{font-size:13px;color:var(--cream-dim);opacity:.7;max-width:300px;margin:0;line-height:1.5}
+.map-badge{position:absolute;left:18px;bottom:18px;z-index:500;background:rgba(255,255,255,.92);border:1px solid var(--line-strong);border-radius:8px;padding:7px 10px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--cream-dim);box-shadow:0 2px 8px rgba(0,0,0,.08)}
+@media(max-width:860px){.app{flex-direction:column}.panel{width:100%;min-width:0;height:58%;order:2;border-right:none;border-top:1px solid var(--line)}.map-wrap{height:42%;order:1}}
 </style>
 </head>
-
 <body>
-
 <div class="app">
-
-  <!-- =======================================================
-       PANEL
-  ======================================================== -->
-
-  <div class="panel">
-
-    <div class="panel-scroll" id="panelScroll">
-
-      <div class="brand">
-        <svg width="30" height="30" viewBox="0 0 40 40" fill="none">
-          <circle
-            cx="20"
-            cy="20"
-            r="18.5"
-            stroke="#1E7A5F"
-            stroke-width="1"
-          />
-          <path
-            d="M20 6 L23 18 L20 20 L17 18 Z"
-            fill="#1E7A5F"
-          />
-          <path
-            d="M20 34 L17 22 L20 20 L23 22 Z"
-            fill="#171B18"
-            opacity=".5"
-          />
-          <circle
-            cx="20"
-            cy="20"
-            r="2"
-            fill="#171B18"
-          />
-        </svg>
-
-        <h1>Wander Generator</h1>
-      </div>
-
-      <p class="tagline">
-        Find a better way to wander.
-      </p>
-
-
-      <!-- START -->
-
-      <label class="field-label">
-        Starting point
-      </label>
-
-      <div class="location-row">
-
-        <input
-          type="text"
-          id="startInput"
-          placeholder="A place, address or neighbourhood"
-        />
-
-        <button
-          class="location-button"
-          id="locationButton"
-          title="Use my current location"
-        >
-          From here
-        </button>
-
-      </div>
-
-      <div class="location-help" id="locationHelp">
-        Enter somewhere, or use your current location.
-      </div>
-
-
-      <!-- DISTANCE -->
-
-      <label class="field-label">
-        Walking distance
-      </label>
-
-      <div
-        class="distance-row"
-        id="distanceRow"
-      ></div>
-
-
-      <!-- PURPOSE -->
-
-      <label class="field-label">
-        What are you in the mood for?
-      </label>
-
-      <textarea
-        id="purposeInput"
-        class="purpose-input"
-        placeholder="e.g. Weird history, interesting buildings and somewhere good for coffee."
-      ></textarea>
-
-      <div
-        class="quick-purposes"
-        id="quickPurposes"
-      ></div>
-
-
-      <!-- GENERATE -->
-
-      <button
-        class="generate-btn"
-        id="generateBtn"
-      >
-        Generate walks
-      </button>
-
-      <div
-        class="status-note"
-        id="statusNote"
-      ></div>
-
-
-      <!-- WALKS -->
-
-      <div
-        class="walks"
-        id="walksContainer"
-      ></div>
-
-
-      <!-- DETAIL -->
-
-      <div
-        class="detail"
-        id="detailPanel"
-      ></div>
-
-    </div>
-  </div>
-
-
-  <!-- =======================================================
-       MAP
-  ======================================================== -->
-
-  <div class="map-wrap">
-
-    <div id="map"></div>
-
-    <div
-      class="empty-state"
-      id="emptyState"
-    >
-
-      <svg
-        width="46"
-        height="46"
-        viewBox="0 0 40 40"
-        fill="none"
-      >
-        <circle
-          cx="20"
-          cy="20"
-          r="18.5"
-          stroke="#8A9186"
-          stroke-width="1"
-        />
-
-        <path
-          d="M20 6 L23 18 L20 20 L17 18 Z"
-          fill="#8A9186"
-        />
-
-        <path
-          d="M20 34 L17 22 L20 20 L23 22 Z"
-          fill="#8A9186"
-          opacity=".4"
-        />
-      </svg>
-
-      <h3>Your walk will appear here</h3>
-
-      <p>
-        Tell Wander where you are and what you're in the mood for.
-        It'll find somewhere worth walking to.
-      </p>
-
-    </div>
-
-    <div class="map-badge">
-      OpenStreetMap · live geographic data
-    </div>
-
-  </div>
-
+<div class="panel">
+<div class="panel-scroll" id="panelScroll">
+<div class="brand"><svg fill="none" height="30" viewBox="0 0 40 40" width="30"><circle cx="20" cy="20" r="18.5" stroke="#1E7A5F" stroke-width="1"/><path d="M20 6 L23 18 L20 20 L17 18 Z" fill="#1E7A5F"/><path d="M20 34 L17 22 L20 20 L23 22 Z" fill="#171B18" opacity=".5"/><circle cx="20" cy="20" r="2" fill="#171B18"/></svg><h1>Wander Generator</h1></div>
+<p class="tagline">Find a better way to wander.</p>
+<label class="field-label">Starting point</label>
+<div class="location-row"><input id="startInput" type="text" placeholder="A place, address or neighbourhood"><button class="location-button" id="locationButton" title="Use my current location">From here</button></div>
+<div class="location-help" id="locationHelp">Enter somewhere, or use your current location.</div>
+<label class="field-label">Walking distance</label>
+<div class="distance-row" id="distanceRow"></div>
+<label class="field-label">What are you in the mood for?</label>
+<textarea class="purpose-input" id="purposeInput" placeholder="e.g. Weird history, interesting buildings and somewhere good for coffee."></textarea>
+<div class="quick-purposes" id="quickPurposes"></div>
+<button class="generate-btn" id="generateBtn">Generate walks</button>
+<div class="status-note" id="statusNote"></div>
+<div class="walks" id="walksContainer"></div>
+<div class="detail" id="detailPanel"></div>
 </div>
-
-
+</div>
+<div class="map-wrap">
+<div id="map"></div>
+<div class="empty-state" id="emptyState"><svg fill="none" height="46" viewBox="0 0 40 40" width="46"><circle cx="20" cy="20" r="18.5" stroke="#8A9186" stroke-width="1"/><path d="M20 6 L23 18 L20 20 L17 18 Z" fill="#8A9186"/><path d="M20 34 L17 22 L20 20 L23 22 Z" fill="#8A9186" opacity=".4"/></svg><h3>Your walk will appear here</h3><p>Tell Wander where you are and what you're in the mood for. It'll find somewhere worth walking to.</p></div>
+<div class="map-badge">OpenStreetMap · live geographic data</div>
+</div>
+</div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
-
 <script>
-/* ========================================================================
-   WANDER GENERATOR
-   Dynamic prototype
-   ------------------------------------------------------------------------
-   No city dataset.
-   No POI dataset.
-   No Supabase.
-   No API keys.
-
-   Geographic discovery:
-     Nominatim + Overpass / OpenStreetMap
-
-   Routing:
-     OpenStreetMap routing service
-
-   Narrative:
-     Local heuristic generator
-
-   ======================================================================== */
-
-
-/* ========================================================================
-   CONFIGURATION
-======================================================================== */
-
-const CONFIG = {
-
-  nominatim:
-    "https://nominatim.openstreetmap.org",
-
-  overpass:
-    "https://overpass-api.de/api/interpreter",
-
-  routing:
-    "https://routing.openstreetmap.de/routed-foot/route/v1/driving",
-
-  userAgent:
-    "WanderGeneratorPrototype/1.0",
-
-  maxCandidates:
-    60,
-
-  routesToGenerate:
-    3,
-
-  discoveryRadiusMultiplier:
-    0.72
-
+const CONFIG={
+nominatim:"https://nominatim.openstreetmap.org",
+overpassEndpoints:[
+"https://overpass-api.de/api/interpreter",
+"https://overpass.kumi.systems/api/interpreter",
+"https://overpass.private.coffee/api/interpreter"
+],
+routing:"https://routing.openstreetmap.de/routed-foot/route/v1/driving",
+userAgent:"WanderGeneratorPrototype/2.0",
+maxCandidates:100,
+routesToGenerate:3,
+overpassTimeout:18,
+discoveryRadiusMultiplier:.62
 };
-
-
-/* ========================================================================
-   STATE
-======================================================================== */
-
-const state = {
-
-  distance: "medium",
-
-  start: null,
-
-  startText: "",
-
-  purpose: "",
-
-  preferences: null,
-
-  currentWalks: [],
-
-  selectedWalk: null
-
+const state={distance:"medium",start:null,startText:"",purpose:"",preferences:null,currentWalks:[],selectedWalk:null,searchSeed:0};
+let map=null,startMarker=null,routeLayer=null,stopMarkers=[];
+const DISTANCES={
+short:{label:"Short",sub:"3–5 km",target:4,radius:2600,stops:[4,5]},
+medium:{label:"Medium",sub:"5–8 km",target:6.5,radius:4300,stops:[5,6]},
+long:{label:"Long",sub:"8–11 km",target:9.5,radius:6200,stops:[6,7]}
 };
-
-
-let map = null;
-
-let startMarker = null;
-
-let routeLayer = null;
-
-let stopMarkers = [];
-
-
-/* ========================================================================
-   DISTANCES
-======================================================================== */
-
-const DISTANCES = {
-
-  short: {
-    label: "Short",
-    sub: "3–5 km",
-    target: 4,
-    radius: 2600,
-    stops: [4,5]
-  },
-
-  medium: {
-    label: "Medium",
-    sub: "5–8 km",
-    target: 6.5,
-    radius: 4300,
-    stops: [5,6]
-  },
-
-  long: {
-    label: "Long",
-    sub: "8–11 km",
-    target: 9.5,
-    radius: 6200,
-    stops: [6,7]
-  }
-
-};
-
-
-/* ========================================================================
-   QUICK PURPOSES
-======================================================================== */
-
-const QUICK_PURPOSES = [
-
-  "Curious",
-  "History",
-  "Architecture",
-  "Nature",
-  "Weird",
-  "Food & coffee",
-  "Hidden places",
-  "Local life",
-  "Surprise me"
-
-];
-
-
-/* ========================================================================
-   MAP
-======================================================================== */
-
+const QUICK_PURPOSES=["Curious","History","Architecture","Nature","Weird","Food & coffee","Hidden places","Local life","Surprise me"];
 function initMap(){
-
-  map = L.map("map", {
-
-    zoomControl: true,
-
-    attributionControl: true
-
-  }).setView(
-
-    [-31.9523,115.8613],
-
-    13
-
-  );
-
-
-  L.tileLayer(
-
-    "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-
-    {
-
-      attribution:
-        '&copy; OpenStreetMap contributors &copy; CARTO',
-
-      subdomains:
-        "abcd",
-
-      maxZoom:
-        19
-
-    }
-
-  ).addTo(map);
-
-
-  routeLayer =
-    L.layerGroup().addTo(map);
-
+map=L.map("map",{zoomControl:true,attributionControl:true}).setView([-31.9523,115.8613],13);
+L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",{attribution:"&copy; OpenStreetMap contributors &copy; CARTO",subdomains:"abcd",maxZoom:19}).addTo(map);
+routeLayer=L.layerGroup().addTo(map);
 }
-
-
-/* ========================================================================
-   MAP HELPERS
-======================================================================== */
-
 function clearMapLayers(){
-
-  routeLayer.clearLayers();
-
-  stopMarkers = [];
-
-  if(startMarker){
-
-    map.removeLayer(startMarker);
-
-    startMarker = null;
-
-  }
-
+routeLayer.clearLayers();
+stopMarkers=[];
+if(startMarker){map.removeLayer(startMarker);startMarker=null}
 }
-
-
-function renderStartMarker(start){
-
-  if(startMarker){
-
-    map.removeLayer(startMarker);
-
-  }
-
-
-  startMarker = L.marker(
-
-    [start.lat,start.lon],
-
-    {
-
-      icon:L.divIcon({
-
-        className:"",
-
-        html:
-          '<div class="start-marker"></div>',
-
-        iconSize:
-          [16,16],
-
-        iconAnchor:
-          [8,8]
-
-      })
-
-    }
-
-  )
-
-  .bindPopup("<b>Your starting point</b>")
-
-  .addTo(map);
-
+function renderStartMarker(place){
+if(startMarker)map.removeLayer(startMarker);
+startMarker=L.marker([place.lat,place.lon],{icon:L.divIcon({className:"",html:'<div class="start-marker"></div>',iconSize:[16,16],iconAnchor:[8,8]})}).bindPopup("<b>Your starting point</b>").addTo(map);
 }
-
-
-/* ========================================================================
-   GEOLOCATION
-======================================================================== */
-
 function getCurrentLocation(){
-
-  return new Promise(
-
-    (resolve,reject)=>{
-
-      if(!navigator.geolocation){
-
-        reject(
-          new Error(
-            "Geolocation isn't available in this browser."
-          )
-        );
-
-        return;
-
-      }
-
-
-      navigator.geolocation.getCurrentPosition(
-
-        position=>{
-
-          resolve({
-
-            lat:
-              position.coords.latitude,
-
-            lon:
-              position.coords.longitude,
-
-            displayName:
-              "Your current location",
-
-            source:
-              "browser"
-
-          });
-
-        },
-
-        error=>{
-
-          let message =
-            "Couldn't get your location.";
-
-          if(error.code === 1){
-
-            message =
-              "Location permission was denied.";
-
-          }
-
-          reject(
-            new Error(message)
-          );
-
-        },
-
-        {
-
-          enableHighAccuracy:
-            true,
-
-          timeout:
-            10000,
-
-          maximumAge:
-            60000
-
-        }
-
-      );
-
-    }
-
-  );
-
-}
-
-
-/* ========================================================================
-   NOMINATIM GEOCODING
-======================================================================== */
-
-async function geocode(query){
-
-  const url =
-    CONFIG.nominatim +
-    "/search?" +
-    new URLSearchParams({
-
-      q: query,
-
-      format: "json",
-
-      limit: "1",
-
-      addressdetails: "1"
-
-    });
-
-
-  const response =
-    await fetch(
-
-      url,
-
-      {
-
-        headers:{
-
-          "Accept":
-            "application/json"
-
-        }
-
-      }
-
-    );
-
-
-  if(!response.ok){
-
-    throw new Error(
-      "Location search failed."
-    );
-
-  }
-
-
-  const results =
-    await response.json();
-
-
-  if(!results.length){
-
-    throw new Error(
-      `Couldn't find "${query}".`
-    );
-
-  }
-
-
-  const r = results[0];
-
-
-  return {
-
-    lat:
-      Number(r.lat),
-
-    lon:
-      Number(r.lon),
-
-    displayName:
-      r.display_name,
-
-    source:
-      "nominatim",
-
-    osmId:
-      r.osm_id,
-
-    osmType:
-      r.osm_type
-
-  };
-
-}
-
-
-/* ========================================================================
-   DISTANCE
-======================================================================== */
-
-function haversineKm(a,b){
-
-  const R = 6371;
-
-  const dLat =
-    (b.lat-a.lat) *
-    Math.PI / 180;
-
-  const dLon =
-    (b.lon-a.lon) *
-    Math.PI / 180;
-
-  const lat1 =
-    a.lat *
-    Math.PI / 180;
-
-  const lat2 =
-    b.lat *
-    Math.PI / 180;
-
-  const x =
-    Math.sin(dLat/2)**2 +
-
-    Math.cos(lat1) *
-    Math.cos(lat2) *
-    Math.sin(dLon/2)**2;
-
-  return R *
-    2 *
-    Math.atan2(
-      Math.sqrt(x),
-      Math.sqrt(1-x)
-    );
-
-}
-
-
-/* ========================================================================
-   PURPOSE INTERPRETATION
-   ------------------------------------------------------------------------
-   This is deliberately simple for the no-backend prototype.
-
-   Later this function can become an AI call without changing the rest
-   of the route engine.
-======================================================================== */
-
-function interpretPurpose(text){
-
-  const input =
-    (text || "")
-      .toLowerCase()
-      .trim();
-
-
-  const preferences = {
-
-    interest: 0.5,
-
-    quirky: 0,
-
-    history: 0,
-
-    food: 0,
-
-    nature: 0,
-
-    architecture: 0,
-
-    local: 0.5,
-
-    touristPenalty: 0.5,
-
-    categories: [],
-
-    keywords: []
-
-  };
-
-
-  if(!input){
-
-    preferences.interest = 1;
-
-    preferences.quirky = .5;
-
-    preferences.history = .4;
-
-    preferences.nature = .4;
-
-    preferences.architecture = .4;
-
-    return preferences;
-
-  }
-
-
-  if(
-    input.includes("curious") ||
-    input.includes("interesting") ||
-    input.includes("discover")
-  ){
-
-    preferences.interest += 1;
-
-  }
-
-
-  if(
-    input.includes("weird") ||
-    input.includes("odd") ||
-    input.includes("strange") ||
-    input.includes("quirky") ||
-    input.includes("unusual") ||
-    input.includes("eccentric")
-  ){
-
-    preferences.quirky += 1.5;
-
-  }
-
-
-  if(
-    input.includes("history") ||
-    input.includes("historic") ||
-    input.includes("heritage") ||
-    input.includes("old") ||
-    input.includes("ancient")
-  ){
-
-    preferences.history += 1.4;
-
-    preferences.categories.push(
-      "historic"
-    );
-
-  }
-
-
-  if(
-    input.includes("architecture") ||
-    input.includes("building") ||
-    input.includes("buildings") ||
-    input.includes("design")
-  ){
-
-    preferences.architecture += 1.4;
-
-    preferences.categories.push(
-      "architecture"
-    );
-
-  }
-
-
-  if(
-    input.includes("nature") ||
-    input.includes("green") ||
-    input.includes("park") ||
-    input.includes("garden") ||
-    input.includes("trees") ||
-    input.includes("wildlife")
-  ){
-
-    preferences.nature += 1.5;
-
-    preferences.categories.push(
-      "nature"
-    );
-
-  }
-
-
-  if(
-    input.includes("food") ||
-    input.includes("eat") ||
-    input.includes("coffee") ||
-    input.includes("cafe") ||
-    input.includes("bakery") ||
-    input.includes("market") ||
-    input.includes("lunch")
-  ){
-
-    preferences.food += 1.5;
-
-    preferences.categories.push(
-      "food"
-    );
-
-  }
-
-
-  if(
-    input.includes("local") ||
-    input.includes("locals") ||
-    input.includes("neighbourhood") ||
-    input.includes("neighborhood")
-  ){
-
-    preferences.local += 1.4;
-
-    preferences.touristPenalty += .8;
-
-  }
-
-
-  if(
-    input.includes("hidden") ||
-    input.includes("secret") ||
-    input.includes("unknown") ||
-    input.includes("quiet") ||
-    input.includes("underrated")
-  ){
-
-    preferences.local += 1;
-
-    preferences.quirky += .8;
-
-    preferences.touristPenalty += 1;
-
-  }
-
-
-  if(
-    input.includes("tourist") &&
-    (
-      input.includes("avoid") ||
-      input.includes("less") ||
-      input.includes("away") ||
-      input.includes("don't")
-    )
-  ){
-
-    preferences.touristPenalty += 1.5;
-
-  }
-
-
-  preferences.keywords =
-    input
-      .split(/[\s,.;!?]+/)
-      .filter(
-        word =>
-          word.length > 3
-      );
-
-
-  return preferences;
-
-}
-
-
-/* ========================================================================
-   OVERPASS QUERY
-======================================================================== */
-
-function buildOverpassQuery(start,radius){
-
-  /*
-    We deliberately search broadly.
-
-    OSM uses many different tagging conventions, so looking only for
-    "tourism=attraction" would miss huge numbers of useful places.
-  */
-
-
-  const around =
-    `(around:${radius},${start.lat},${start.lon})`;
-
-
-  return `
-
-[out:json][timeout:30];
-
-(
-
-  node${around}[tourism];
-
-  way${around}[tourism];
-
-  relation${around}[tourism];
-
-  node${around}[historic];
-
-  way${around}[historic];
-
-  relation${around}[historic];
-
-  node${around}[amenity~"arts_centre|cafe|restaurant|theatre|cinema|library|marketplace"];
-
-  way${around}[amenity~"arts_centre|cafe|restaurant|theatre|cinema|library|marketplace"];
-
-  node${around}[leisure~"park|garden|nature_reserve"];
-
-  way${around}[leisure~"park|garden|nature_reserve"];
-
-  node${around}[natural~"beach|wood|water|peak"];
-
-  way${around}[natural~"beach|wood|water|peak"];
-
-  node${around}[man_made~"tower|bridge|monument"];
-
-  way${around}[man_made~"tower|bridge|monument"];
-
-  node${around}[memorial];
-
-  way${around}[memorial];
-
+return new Promise((resolve,reject)=>{
+if(!navigator.geolocation){reject(new Error("Geolocation isn't available in this browser."));return}
+navigator.geolocation.getCurrentPosition(
+e=>resolve({lat:e.coords.latitude,lon:e.coords.longitude,displayName:"Your current location",source:"browser"}),
+e=>{let message="Couldn't get your location.";if(e.code===1)message="Location permission was denied.";if(e.code===2)message="Your location couldn't be determined.";if(e.code===3)message="Location lookup timed out.";reject(new Error(message))},
+{enableHighAccuracy:true,timeout:10000,maximumAge:60000}
 );
-
-out center tags;
-
-`;
-
 }
-
-
-/* ========================================================================
-   OVERPASS DISCOVERY
-======================================================================== */
-
+async function geocode(query){
+const url=CONFIG.nominatim+"/search?"+new URLSearchParams({q:query,format:"json",limit:"1",addressdetails:"1"});
+const response=await fetch(url,{headers:{Accept:"application/json"}});
+if(!response.ok)throw new Error("Location search failed.");
+const results=await response.json();
+if(!results.length)throw new Error(`Couldn't find "${query}".`);
+const item=results[0];
+return{lat:Number(item.lat),lon:Number(item.lon),displayName:item.display_name,source:"nominatim",osmId:item.osm_id,osmType:item.osm_type};
+}
+function haversineKm(a,b){
+const dLat=(b.lat-a.lat)*Math.PI/180;
+const dLon=(b.lon-a.lon)*Math.PI/180;
+const lat1=a.lat*Math.PI/180;
+const lat2=b.lat*Math.PI/180;
+const h=Math.sin(dLat/2)**2+Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+return 12742*Math.atan2(Math.sqrt(h),Math.sqrt(1-h));
+}
+function interpretPurpose(value){
+const text=(value||"").toLowerCase().trim();
+const p={interest:.5,quirky:0,history:0,food:0,nature:0,architecture:0,local:.5,touristPenalty:.5,categories:[],keywords:[]};
+if(!text){
+p.interest=1;p.quirky=.5;p.history=.4;p.nature=.4;p.architecture=.4;
+return p;
+}
+if(/curious|interesting|discover|surprise/.test(text))p.interest+=1;
+if(/weird|odd|strange|quirky|unusual|eccentric/.test(text))p.quirky+=1.5;
+if(/history|historic|heritage|old|ancient/.test(text)){p.history+=1.4;p.categories.push("historic")}
+if(/architecture|building|buildings|design/.test(text)){p.architecture+=1.4;p.categories.push("architecture")}
+if(/nature|green|park|garden|trees|wildlife/.test(text)){p.nature+=1.5;p.categories.push("nature")}
+if(/food|eat|coffee|cafe|bakery|market|lunch/.test(text)){p.food+=1.5;p.categories.push("food")}
+if(/local|locals|neighbourhood|neighborhood/.test(text)){p.local+=1.4;p.touristPenalty+=.8}
+if(/hidden|secret|unknown|quiet|underrated/.test(text)){p.local+=1;p.quirky+=.8;p.touristPenalty+=1}
+if(/avoid|less|away|don't.*tourist/.test(text))p.touristPenalty+=1.5;
+p.keywords=text.split(/[\s,.;!?]+/).filter(x=>x.length>3);
+return p;
+}
+function buildOverpassQuery(start,radius){
+const around=`(around:${Math.round(radius)},${start.lat},${start.lon})`;
+return`[out:json][timeout:${CONFIG.overpassTimeout}];(
+n${around}[name][tourism~"museum|gallery|attraction|viewpoint|artwork|zoo|theme_park"];
+n${around}[name][historic];
+n${around}[name][amenity~"arts_centre|cafe|restaurant|theatre|cinema|library|marketplace"];
+n${around}[name][leisure~"park|garden|nature_reserve"];
+n${around}[name][natural~"beach|wood|water|peak"];
+n${around}[name][man_made~"tower|bridge|monument"];
+n${around}[name][memorial];
+n${around}[name][building][wikidata];
+n${around}[name][heritage];
+w${around}[name][tourism~"museum|gallery|attraction|viewpoint|artwork"];
+w${around}[name][historic];
+w${around}[name][amenity~"arts_centre|theatre|cinema|library|marketplace"];
+w${around}[name][leisure~"park|garden|nature_reserve"];
+w${around}[name][natural~"beach|wood|water|peak"];
+w${around}[name][man_made~"tower|bridge|monument"];
+w${around}[name][memorial];
+w${around}[name][heritage];
+);out center tags;`;
+}
+async function fetchOverpass(query){
+let lastError=null;
+const endpoints=[...CONFIG.overpassEndpoints].sort(()=>Math.random()-.5);
+for(const endpoint of endpoints){
+try{
+const controller=new AbortController();
+const timer=setTimeout(()=>controller.abort(),22000);
+const response=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"text/plain;charset=UTF-8","Accept":"application/json"},body:query,signal:controller.signal});
+clearTimeout(timer);
+if(response.ok)return await response.json();
+lastError=new Error(`Overpass returned ${response.status}`);
+}catch(error){lastError=error}
+}
+throw lastError||new Error("Place discovery failed.");
+}
 async function discoverPlaces(start,radius){
-
-  const query =
-    buildOverpassQuery(
-      start,
-      radius
-    );
-
-
-  const response =
-    await fetch(
-
-      CONFIG.overpass,
-
-      {
-
-        method:
-          "POST",
-
-        headers:{
-
-          "Content-Type":
-            "text/plain;charset=UTF-8"
-
-        },
-
-        body:
-          query
-
-      }
-
-    );
-
-
-  if(!response.ok){
-
-    throw new Error(
-      "Place discovery failed."
-    );
-
-  }
-
-
-  const data =
-    await response.json();
-
-
-  const places = [];
-
-
-  for(const element of data.elements){
-
-    const tags =
-      element.tags || {};
-
-
-    const lat =
-      element.lat ??
-      element.center?.lat;
-
-    const lon =
-      element.lon ??
-      element.center?.lon;
-
-
-    if(
-      typeof lat !== "number" ||
-      typeof lon !== "number"
-    ){
-
-      continue;
-
-    }
-
-
-    const name =
-      tags.name ||
-      tags["name:en"];
-
-
-    if(!name){
-
-      continue;
-
-    }
-
-
-    const place =
-      normalisePlace(
-        element,
-        tags,
-        lat,
-        lon,
-        name
-      );
-
-
-    if(place){
-
-      places.push(place);
-
-    }
-
-  }
-
-
-  return deduplicatePlaces(
-    places
-  );
-
+const query=buildOverpassQuery(start,radius);
+const data=await fetchOverpass(query);
+const places=[];
+for(const element of data.elements||[]){
+const tags=element.tags||{};
+const name=tags.name||tags["name:en"];
+const lat=element.lat??element.center?.lat;
+const lon=element.lon??element.center?.lon;
+if(!name||typeof lat!=="number"||typeof lon!=="number")continue;
+const place=normalisePlace(element,tags,lat,lon,name);
+if(place)places.push(place);
 }
-
-
-/* ========================================================================
-   NORMALISE OSM PLACE
-======================================================================== */
-
-function normalisePlace(
-  element,
-  tags,
-  lat,
-  lon,
-  name
-){
-
-  const type =
-    detectPlaceType(
-      tags
-    );
-
-
-  const description =
-    createPlaceDescription(
-      tags,
-      type
-    );
-
-
-  const touristiness =
-    estimateTouristiness(
-      tags,
-      type
-    );
-
-
-  return {
-
-    id:
-      `${element.type}-${element.id}`,
-
-    osmId:
-      element.id,
-
-    osmType:
-      element.type,
-
-    name,
-
-    lat,
-
-    lon,
-
-    type,
-
-    category:
-      type.category,
-
-    description,
-
-    tags,
-
-    touristiness,
-
-    interest:
-      calculateInterest(
-        tags,
-        type
-      ),
-
-    quirky:
-      calculateQuirk(
-        tags,
-        type
-      ),
-
-    history:
-      calculateHistory(
-        tags,
-        type
-      ),
-
-    food:
-      calculateFood(
-        tags,
-        type
-      ),
-
-    nature:
-      calculateNature(
-        tags,
-        type
-      ),
-
-    architecture:
-      calculateArchitecture(
-        tags,
-        type
-      )
-
-  };
-
+let result=deduplicatePlaces(places);
+result=result.filter(p=>haversineKm(start,p)<radius/1000*1.15);
+result.sort((a,b)=>haversineKm(start,a)-haversineKm(start,b));
+return result.slice(0,CONFIG.maxCandidates);
 }
-
-
-/* ========================================================================
-   PLACE TYPE DETECTION
-======================================================================== */
-
+function normalisePlace(element,tags,lat,lon,name){
+const type=detectPlaceType(tags);
+return{
+id:`${element.type}-${element.id}`,
+osmId:element.id,
+osmType:element.type,
+name,
+lat,
+lon,
+type,
+category:type.category,
+description:createPlaceDescription(tags,type),
+tags,
+touristiness:estimateTouristiness(tags,type),
+interest:calculateInterest(tags,type),
+quirky:calculateQuirk(tags,type),
+history:calculateHistory(tags,type),
+food:calculateFood(tags,type),
+nature:calculateNature(tags,type),
+architecture:calculateArchitecture(tags,type),
+local:calculateLocal(tags,type)
+};
+}
 function detectPlaceType(tags){
-
-  if(
-    tags.historic ||
-    tags.archaeological_site
-  ){
-
-    return {
-      label:"Historic site",
-      category:"history"
-    };
-
-  }
-
-
-  if(
-    tags.tourism === "museum"
-  ){
-
-    return {
-      label:"Museum",
-      category:"culture"
-    };
-
-  }
-
-
-  if(
-    tags.tourism === "gallery" ||
-    tags.amenity === "arts_centre"
-  ){
-
-    return {
-      label:"Arts",
-      category:"culture"
-    };
-
-  }
-
-
-  if(
-    tags.tourism === "viewpoint"
-  ){
-
-    return {
-      label:"Viewpoint",
-      category:"nature"
-    };
-
-  }
-
-
-  if(
-    tags.leisure === "park"
-  ){
-
-    return {
-      label:"Park",
-      category:"nature"
-    };
-
-  }
-
-
-  if(
-    tags.leisure === "garden"
-  ){
-
-    return {
-      label:"Garden",
-      category:"nature"
-    };
-
-  }
-
-
-  if(
-    tags.natural
-  ){
-
-    return {
-      label:"Natural feature",
-      category:"nature"
-    };
-
-  }
-
-
-  if(
-    tags.amenity === "cafe"
-  ){
-
-    return {
-      label:"Café",
-      category:"food"
-    };
-
-  }
-
-
-  if(
-    tags.amenity === "restaurant"
-  ){
-
-    return {
-      label:"Restaurant",
-      category:"food"
-    };
-
-  }
-
-
-  if(
-    tags.amenity === "marketplace"
-  ){
-
-    return {
-      label:"Market",
-      category:"food"
-    };
-
-  }
-
-
-  if(
-    tags.memorial ||
-    tags.historic === "memorial"
-  ){
-
-    return {
-      label:"Memorial",
-      category:"history"
-    };
-
-  }
-
-
-  if(
-    tags.man_made === "monument"
-  ){
-
-    return {
-      label:"Monument",
-      category:"quirky"
-    };
-
-  }
-
-
-  if(
-    tags.tourism
-  ){
-
-    return {
-      label:"Attraction",
-      category:"culture"
-    };
-
-  }
-
-
-  return {
-
-    label:"Interesting place",
-
-    category:"interest"
-
-  };
-
+if(tags.historic||tags.heritage)return{label:"Historic site",category:"history"};
+if(tags.tourism==="museum")return{label:"Museum",category:"culture"};
+if(tags.tourism==="gallery"||tags.amenity==="arts_centre")return{label:"Arts",category:"culture"};
+if(tags.tourism==="viewpoint")return{label:"Viewpoint",category:"nature"};
+if(tags.tourism==="artwork")return{label:"Artwork",category:"quirky"};
+if(tags.leisure==="park")return{label:"Park",category:"nature"};
+if(tags.leisure==="garden")return{label:"Garden",category:"nature"};
+if(tags.leisure==="nature_reserve")return{label:"Nature reserve",category:"nature"};
+if(tags.natural)return{label:"Natural feature",category:"nature"};
+if(tags.amenity==="cafe")return{label:"Café",category:"food"};
+if(tags.amenity==="restaurant")return{label:"Restaurant",category:"food"};
+if(tags.amenity==="marketplace")return{label:"Market",category:"food"};
+if(tags.amenity==="theatre")return{label:"Theatre",category:"culture"};
+if(tags.amenity==="cinema")return{label:"Cinema",category:"culture"};
+if(tags.amenity==="library")return{label:"Library",category:"culture"};
+if(tags.memorial||tags.historic==="memorial")return{label:"Memorial",category:"history"};
+if(tags.man_made==="monument")return{label:"Monument",category:"quirky"};
+if(tags.man_made==="tower")return{label:"Tower",category:"architecture"};
+if(tags.man_made==="bridge")return{label:"Bridge",category:"architecture"};
+if(tags.building)return{label:"Interesting building",category:"architecture"};
+if(tags.tourism)return{label:"Attraction",category:"culture"};
+return{label:"Interesting place",category:"interest"};
 }
-
-
-/* ========================================================================
-   DESCRIPTION
-======================================================================== */
-
 function createPlaceDescription(tags,type){
-
-  const parts = [];
-
-
-  if(tags.description){
-
-    parts.push(
-      tags.description
-    );
-
-  }
-
-
-  if(tags.historic){
-
-    parts.push(
-      humaniseTag(
-        tags.historic
-      )
-    );
-
-  }
-
-
-  if(tags.tourism){
-
-    parts.push(
-      humaniseTag(
-        tags.tourism
-      )
-    );
-
-  }
-
-
-  if(tags.amenity){
-
-    parts.push(
-      humaniseTag(
-        tags.amenity
-      )
-    );
-
-  }
-
-
-  if(tags.leisure){
-
-    parts.push(
-      humaniseTag(
-        tags.leisure
-      )
-    );
-
-  }
-
-
-  if(tags.architect){
-
-    parts.push(
-      `designed by ${tags.architect}`
-    );
-
-  }
-
-
-  if(tags.start_date){
-
-    parts.push(
-      `dating from ${tags.start_date}`
-    );
-
-  }
-
-
-  if(!parts.length){
-
-    return `${type.label} worth exploring along the way.`;
-
-  }
-
-
-  return parts
-    .slice(0,2)
-    .join(" · ");
-
+const parts=[];
+if(tags.description)parts.push(tags.description);
+if(tags.historic)parts.push(humaniseTag(tags.historic));
+if(tags.tourism)parts.push(humaniseTag(tags.tourism));
+if(tags.amenity)parts.push(humaniseTag(tags.amenity));
+if(tags.leisure)parts.push(humaniseTag(tags.leisure));
+if(tags.architect)parts.push(`designed by ${tags.architect}`);
+if(tags.start_date)parts.push(`dating from ${tags.start_date}`);
+if(tags.artist_name)parts.push(`by ${tags.artist_name}`);
+return parts.length?parts.slice(0,2).join(" · "):`${type.label} worth exploring along the way.`;
 }
-
-
-/* ========================================================================
-   HUMANISE TAG
-======================================================================== */
-
 function humaniseTag(value){
-
-  return String(value)
-    .replace(/_/g," ")
-    .replace(/\b\w/g,c=>c.toUpperCase());
-
+return String(value).replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase());
 }
-
-
-/* ========================================================================
-   PLACE SCORING
-======================================================================== */
-
 function calculateInterest(tags,type){
-
-  let score = 2;
-
-
-  if(tags.wikipedia) score += 2;
-
-  if(tags.wikidata) score += 1;
-
-  if(tags.description) score += 1;
-
-  if(tags.start_date) score += 1;
-
-  if(tags.architect) score += 1;
-
-  if(
-    type.category === "culture"
-  ) score += 1;
-
-
-  return Math.min(5,score);
-
+let score=2;
+if(tags.wikipedia)score+=2;
+if(tags.wikidata)score+=1;
+if(tags.description)score+=1;
+if(tags.start_date)score+=1;
+if(tags.architect)score+=1;
+if(tags.website)score+=.5;
+if(type.category==="culture")score+=1;
+return Math.min(5,score);
 }
-
-
 function calculateQuirk(tags,type){
-
-  let score = 0;
-
-
-  if(tags.memorial) score += 2;
-
-  if(tags.historic) score += 1;
-
-  if(tags.artwork_type) score += 2;
-
-  if(tags.man_made) score += 1;
-
-  if(tags.description) score += 1;
-
-  if(
-    tags.historic === "ruins" ||
-    tags.historic === "archaeological_site"
-  ){
-
-    score += 2;
-
-  }
-
-
-  return Math.min(5,score);
-
+let score=0;
+if(tags.memorial)score+=2;
+if(tags.historic)score+=1;
+if(tags.artwork_type)score+=2;
+if(tags.man_made)score+=1;
+if(tags.description)score+=1;
+if(tags.historic==="ruins"||tags.historic==="archaeological_site")score+=2;
+if(tags.artist_name)score+=1;
+return Math.min(5,score);
 }
-
-
 function calculateHistory(tags,type){
-
-  let score = 0;
-
-
-  if(tags.historic) score += 3;
-
-  if(tags.start_date) score += 1;
-
-  if(tags.wikipedia) score += 1;
-
-  if(tags.wikidata) score += 1;
-
-
-  return Math.min(5,score);
-
+let score=0;
+if(tags.historic)score+=3;
+if(tags.start_date)score+=1;
+if(tags.wikipedia)score+=1;
+if(tags.wikidata)score+=1;
+if(tags.heritage)score+=1;
+return Math.min(5,score);
 }
-
-
 function calculateFood(tags,type){
-
-  let score = 0;
-
-
-  if(
-    tags.amenity === "cafe"
-  ) score = 4;
-
-
-  if(
-    tags.amenity === "restaurant"
-  ) score = 4;
-
-
-  if(
-    tags.amenity === "marketplace"
-  ) score = 5;
-
-
-  if(
-    tags.shop === "bakery"
-  ) score = 5;
-
-
-  return score;
-
+if(tags.amenity==="cafe")return 4;
+if(tags.amenity==="restaurant")return 4;
+if(tags.amenity==="marketplace")return 5;
+if(tags.shop==="bakery")return 5;
+return 0;
 }
-
-
 function calculateNature(tags,type){
-
-  let score = 0;
-
-
-  if(tags.leisure === "park") score = 5;
-
-  if(tags.leisure === "garden") score = 5;
-
-  if(tags.leisure === "nature_reserve") score = 5;
-
-  if(tags.natural) score = 4;
-
-  if(tags.tourism === "viewpoint") score = 4;
-
-
-  return score;
-
+if(tags.leisure==="park"||tags.leisure==="garden"||tags.leisure==="nature_reserve")return 5;
+if(tags.natural)return 4;
+if(tags.tourism==="viewpoint")return 4;
+return 0;
 }
-
-
 function calculateArchitecture(tags,type){
-
-  let score = 0;
-
-
-  if(tags.architect) score += 3;
-
-  if(tags.building) score += 1;
-
-  if(tags.historic) score += 2;
-
-  if(
-    tags.tourism === "museum"
-  ) score += 1;
-
-
-  return Math.min(5,score);
-
+let score=0;
+if(tags.architect)score+=3;
+if(tags.building)score+=1;
+if(tags.historic)score+=2;
+if(tags.tourism==="museum")score+=1;
+if(tags.man_made==="tower"||tags.man_made==="bridge")score+=2;
+return Math.min(5,score);
 }
-
-
+function calculateLocal(tags,type){
+let score=2;
+if(tags.wikipedia)score-=.5;
+if(tags.wikidata)score-=.25;
+if(tags.tourism==="attraction")score-=1;
+if(tags.amenity==="cafe"||tags.amenity==="restaurant")score+=1;
+if(tags.leisure==="park"||tags.leisure==="garden")score+=1;
+return Math.max(0,Math.min(5,score));
+}
 function estimateTouristiness(tags,type){
-
-  let score = 1;
-
-
-  if(tags.wikipedia) score += 1;
-
-  if(tags.wikidata) score += 1;
-
-  if(tags.tourism === "attraction") score += 2;
-
-  if(tags.tourism === "museum") score += 1;
-
-  if(tags.tourism === "viewpoint") score += 1;
-
-  if(tags.historic === "monument") score += 1;
-
-
-  return Math.min(5,score);
-
+let score=1;
+if(tags.wikipedia)score+=1;
+if(tags.wikidata)score+=1;
+if(tags.tourism==="attraction")score+=2;
+if(tags.tourism==="museum")score+=1;
+if(tags.tourism==="viewpoint")score+=1;
+if(tags.historic==="monument")score+=1;
+return Math.min(5,score);
 }
-
-
-/* ========================================================================
-   DEDUPLICATION
-======================================================================== */
-
 function deduplicatePlaces(places){
-
-  const result = [];
-
-  for(const place of places){
-
-    const duplicate =
-      result.find(
-        existing =>
-          haversineKm(
-            existing,
-            place
-          ) < .025
-      );
-
-
-    if(!duplicate){
-
-      result.push(place);
-
-    }
-
-  }
-
-
-  return result;
-
+const result=[];
+for(const place of places){
+if(!result.some(existing=>haversineKm(existing,place)<.04))result.push(place);
 }
-
-
-/* ========================================================================
-   SCORE PLACE AGAINST USER REQUEST
-======================================================================== */
-
-function scorePlace(place,preferences){
-
-  let score = 0;
-
-
-  score +=
-    place.interest *
-    preferences.interest;
-
-
-  score +=
-    place.quirky *
-    preferences.quirky;
-
-
-  score +=
-    place.history *
-    preferences.history;
-
-
-  score +=
-    place.food *
-    preferences.food;
-
-
-  score +=
-    place.nature *
-    preferences.nature;
-
-
-  score +=
-    place.architecture *
-    preferences.architecture;
-
-
-  score +=
-    place.local *
-    preferences.local;
-
-
-  score -=
-    place.touristiness *
-    preferences.touristPenalty *
-    .5;
-
-
-  return score;
-
+return result;
 }
-
-
-/* ========================================================================
-   DISTANCE-AWARE CANDIDATE FILTER
-======================================================================== */
-
-function rankCandidates(
-  places,
-  start,
-  preferences,
-  targetKm
-){
-
-  const scored =
-    places.map(place=>{
-
-      const distance =
-        haversineKm(
-          start,
-          place
-        );
-
-
-      const score =
-        scorePlace(
-          place,
-          preferences
-        );
-
-
-      return {
-
-        place,
-
-        distance,
-
-        score:
-          score -
-          distance *
-          .35
-
-      };
-
-    });
-
-
-  scored.sort(
-    (a,b) =>
-      b.score-a.score
-  );
-
-
-  return scored;
-
+function scorePlace(place,prefs,random){
+let score=0;
+score+=place.interest*prefs.interest;
+score+=place.quirky*prefs.quirky;
+score+=place.history*prefs.history;
+score+=place.food*prefs.food;
+score+=place.nature*prefs.nature;
+score+=place.architecture*prefs.architecture;
+score+=place.local*prefs.local;
+score-=place.touristiness*prefs.touristPenalty*.45;
+score+=(random-.5)*2.5;
+return score;
 }
-
-
-/* ========================================================================
-   SEEDED RANDOMNESS
-======================================================================== */
-
-function hashString(str){
-
-  let hash = 2166136261;
-
-
-  for(let i=0;i<str.length;i++){
-
-    hash ^= str.charCodeAt(i);
-
-    hash =
-      Math.imul(
-        hash,
-        16777619
-      );
-
-  }
-
-
-  return hash >>> 0;
-
+function rankCandidates(places,start,prefs,seed){
+const random=seededRandom(String(seed));
+return places.map(place=>({
+place,
+distance:haversineKm(start,place),
+score:scorePlace(place,prefs,random())
+})).sort((a,b)=>b.score-a.score);
 }
-
-
+function hashString(value){
+let hash=2166136261;
+for(let i=0;i<value.length;i++){hash^=value.charCodeAt(i);hash=Math.imul(hash,16777619)}
+return hash>>>0;
+}
 function seededRandom(seed){
-
-  let value =
-    hashString(seed);
-
-
-  return function(){
-
-    value += 0x6D2B79F5;
-
-    let t =
-      value;
-
-    t =
-      Math.imul(
-        t ^ t >>> 15,
-        t | 1
-      );
-
-    t ^=
-      t +
-      Math.imul(
-        t ^ t >>> 7,
-        t | 61
-      );
-
-    return (
-      (t ^ t >>> 14) >>>
-      0
-    ) /
-    4294967296;
-
-  };
-
+let value=hashString(seed);
+return()=>{
+value+=1831565813;
+let t=value;
+t=Math.imul(t^t>>>15,1|t);
+t^=t+Math.imul(t^t>>>7,61|t);
+return((t^t>>>14)>>>0)/4294967296;
+};
 }
-
-
-/* ========================================================================
-   BUILD CANDIDATE ROUTE
-======================================================================== */
-
-function buildCandidateRoute(
-  start,
-  ranked,
-  distanceConfig,
-  variant
-){
-
-  const rng =
-    seededRandom(
-      `${start.lat},${start.lon}|${variant}`
-    );
-
-
-  const minStops =
-    distanceConfig.stops[0];
-
-  const maxStops =
-    distanceConfig.stops[1];
-
-
-  const route = [];
-
-  const used =
-    new Set();
-
-
-  let current =
-    start;
-
-  let distance =
-    0;
-
-
-  const candidates =
-    ranked.slice(
-      0,
-      Math.min(
-        ranked.length,
-        40
-      )
-    );
-
-
-  while(
-    route.length <
-    maxStops
-  ){
-
-    const available =
-      candidates.filter(
-        item =>
-          !used.has(
-            item.place.id
-          )
-      );
-
-
-    if(!available.length){
-
-      break;
-
-    }
-
-
-    const options =
-      available
-        .map(item=>{
-
-          const d =
-            haversineKm(
-              current,
-              item.place
-            );
-
-
-          const returnDistance =
-            haversineKm(
-              item.place,
-              start
-            );
-
-
-          const projected =
-            distance +
-            d +
-            returnDistance;
-
-
-          let score =
-            item.score;
-
-
-          /*
-            Strongly prefer places that still allow the loop to close.
-          */
-
-          if(
-            projected >
-            distanceConfig.target *
-            1.45
-          ){
-
-            score -=
-              (projected -
-               distanceConfig.target *
-               1.45) *
-              5;
-
-          }
-
-
-          /*
-            Encourage variety.
-          */
-
-          if(
-            route.length &&
-            route[route.length-1].category ===
-            item.place.category
-          ){
-
-            score -= 1.5;
-
-          }
-
-
-          score +=
-            rng() *
-            1.5;
-
-
-          return {
-
-            item,
-
-            d,
-
-            score
-
-          };
-
-        })
-        .sort(
-          (a,b)=>
-            b.score-a.score
-        );
-
-
-    if(!options.length){
-
-      break;
-
-    }
-
-
-    const top =
-      options.slice(
-        0,
-        Math.min(5,options.length)
-      );
-
-
-    const selected =
-      top[
-        Math.floor(
-          rng()*top.length
-        )
-      ];
-
-
-    if(!selected){
-
-      break;
-
-    }
-
-
-    route.push(
-      selected.item.place
-    );
-
-
-    used.add(
-      selected.item.place.id
-    );
-
-
-    distance +=
-      selected.d;
-
-
-    current =
-      selected.item.place;
-
-
-    /*
-      Once we have enough stops and are near our target,
-      close the loop.
-    */
-
-    const returnDistance =
-      haversineKm(
-        current,
-        start
-      );
-
-
-    if(
-      route.length >= minStops &&
-      distance +
-      returnDistance >=
-      distanceConfig.target *
-      .85
-    ){
-
-      break;
-
-    }
-
-  }
-
-
-  return route;
-
+function buildCandidateRoute(start,candidates,config,seed){
+const random=seededRandom(`${seed}|${state.searchSeed}|${start.lat},${start.lon}`);
+const minStops=config.stops[0];
+const maxStops=config.stops[1];
+const stops=[];
+const used=new Set();
+let current=start;
+let walked=0;
+const pool=candidates.slice(0,Math.min(candidates.length,60));
+while(stops.length<maxStops){
+const available=pool.filter(item=>!used.has(item.place.id));
+if(!available.length)break;
+const scored=available.map(item=>{
+const toPlace=haversineKm(current,item.place);
+const backToStart=haversineKm(item.place,start);
+let score=item.score;
+const projected=walked+toPlace+backToStart;
+if(projected>config.target*1.35)score-=5*(projected-config.target*1.35);
+if(stops.length&&stops[stops.length-1].category===item.place.category)score-=1.5;
+if(stops.some(s=>haversineKm(s,item.place)<.25))score-=2;
+score+=random()*3;
+return{item,score,distance:toPlace};
+}).sort((a,b)=>b.score-a.score);
+if(!scored.length)break;
+const shortlist=scored.slice(0,Math.min(7,scored.length));
+const chosen=shortlist[Math.floor(random()*shortlist.length)];
+if(!chosen)break;
+stops.push(chosen.item.place);
+used.add(chosen.item.place.id);
+walked+=chosen.distance;
+current=chosen.item.place;
+const remaining=haversineKm(current,start);
+if(stops.length>=minStops&&walked+remaining>=config.target*.82)break;
 }
-
-
-/* ========================================================================
-   IMPROVE ROUTE ORDER
-======================================================================== */
-
-function routeDistance(
-  start,
-  stops
-){
-
-  if(!stops.length){
-
-    return 0;
-
-  }
-
-
-  let distance =
-    haversineKm(
-      start,
-      stops[0]
-    );
-
-
-  for(
-    let i=0;
-    i<stops.length-1;
-    i++
-  ){
-
-    distance +=
-      haversineKm(
-        stops[i],
-        stops[i+1]
-      );
-
-  }
-
-
-  distance +=
-    haversineKm(
-      stops[stops.length-1],
-      start
-    );
-
-
-  return distance;
-
+return stops;
 }
-
-
-function improveRoute(
-  start,
-  stops
-){
-
-  if(stops.length < 3){
-
-    return stops;
-
-  }
-
-
-  let best =
-    stops.slice();
-
-
-  let bestDistance =
-    routeDistance(
-      start,
-      best
-    );
-
-
-  let improved =
-    true;
-
-
-  let guard =
-    0;
-
-
-  while(
-    improved &&
-    guard < 15
-  ){
-
-    improved =
-      false;
-
-    guard++;
-
-
-    for(
-      let i=0;
-      i<best.length-1;
-      i++
-    ){
-
-      for(
-        let j=i+1;
-        j<best.length;
-        j++
-      ){
-
-        const trial =
-          best
-            .slice(0,i)
-            .concat(
-              best
-                .slice(i,j+1)
-                .reverse()
-            )
-            .concat(
-              best.slice(j+1)
-            );
-
-
-        const distance =
-          routeDistance(
-            start,
-            trial
-          );
-
-
-        if(
-          distance <
-          bestDistance -
-          .01
-        ){
-
-          best =
-            trial;
-
-          bestDistance =
-            distance;
-
-          improved =
-            true;
-
-        }
-
-      }
-
-    }
-
-  }
-
-
-  return best;
-
+function routeDistance(start,stops){
+if(!stops.length)return 0;
+let distance=haversineKm(start,stops[0]);
+for(let i=0;i<stops.length-1;i++)distance+=haversineKm(stops[i],stops[i+1]);
+return distance+haversineKm(stops[stops.length-1],start);
 }
-
-
-/* ========================================================================
-   ROUTE OVERLAP
-======================================================================== */
-
+function improveRoute(start,stops){
+if(stops.length<3)return stops;
+let route=stops.slice();
+let best=routeDistance(start,route);
+let improved=true;
+let iterations=0;
+while(improved&&iterations<12){
+improved=false;
+iterations++;
+for(let i=0;i<route.length-1;i++){
+for(let j=i+1;j<route.length;j++){
+const candidate=route.slice(0,i).concat(route.slice(i,j+1).reverse()).concat(route.slice(j+1));
+const distance=routeDistance(start,candidate);
+if(distance<best-.01){route=candidate;best=distance;improved=true}
+}
+}
+}
+return route;
+}
 function routeOverlap(a,b){
-
-  const ids =
-    new Set(
-      a.map(
-        p=>p.id
-      )
-    );
-
-
-  const shared =
-    b.filter(
-      p =>
-        ids.has(p.id)
-    ).length;
-
-
-  return shared /
-    Math.min(
-      a.length,
-      b.length
-    );
-
+const ids=new Set(a.map(place=>place.id));
+return b.filter(place=>ids.has(place.id)).length/Math.min(a.length,b.length);
 }
-
-
-/* ========================================================================
-   GENERATE MULTIPLE WALKS
-======================================================================== */
-
-function generateWalkCandidates(
-  start,
-  places,
-  preferences,
-  distanceKey
-){
-
-  const distanceConfig =
-    DISTANCES[distanceKey];
-
-
-  const ranked =
-    rankCandidates(
-      places,
-      start,
-      preferences,
-      distanceConfig.target
-    );
-
-
-  const attempts = [];
-
-
-  for(
-    let i=0;
-    i<12;
-    i++
-  ){
-
-    let route =
-      buildCandidateRoute(
-        start,
-        ranked,
-        distanceConfig,
-        i
-      );
-
-
-    if(
-      route.length <
-      distanceConfig.stops[0]
-    ){
-
-      continue;
-
-    }
-
-
-    route =
-      improveRoute(
-        start,
-        route
-      );
-
-
-    const distance =
-      routeDistance(
-        start,
-        route
-      );
-
-
-    const totalScore =
-      route.reduce(
-        (sum,p)=>
-          sum +
-          scorePlace(
-            p,
-            preferences
-          ),
-        0
-      );
-
-
-    const variety =
-      new Set(
-        route.map(
-          p=>p.category
-        )
-      ).size;
-
-
-    const distancePenalty =
-      Math.abs(
-        distance -
-        distanceConfig.target
-      ) * 1.2;
-
-
-    attempts.push({
-
-      stops:
-        route,
-
-      distance,
-
-      score:
-        totalScore +
-        variety * 2 -
-        distancePenalty
-
-    });
-
-  }
-
-
-  attempts.sort(
-    (a,b)=>
-      b.score-a.score
-  );
-
-
-  const finalRoutes = [];
-
-
-  for(
-    const attempt of attempts
-  ){
-
-    if(
-      finalRoutes.length >=
-      CONFIG.routesToGenerate
-    ){
-
-      break;
-
-    }
-
-
-    const tooSimilar =
-      finalRoutes.some(
-        existing =>
-          routeOverlap(
-            existing.stops,
-            attempt.stops
-          ) > .55
-      );
-
-
-    if(!tooSimilar){
-
-      finalRoutes.push(
-        attempt
-      );
-
-    }
-
-  }
-
-
-  return finalRoutes;
-
+function generateWalkCandidates(start,places,prefs,distance){
+const config=DISTANCES[distance];
+const candidates=rankCandidates(places,start,prefs,`${state.searchSeed}|${prefs.keywords.join(",")}|${distance}`);
+const possible=[];
+for(let i=0;i<24;i++){
+let stops=buildCandidateRoute(start,candidates,config,i);
+if(stops.length<config.stops[0])continue;
+stops=improveRoute(start,stops);
+const routeKm=routeDistance(start,stops);
+const placeScore=stops.reduce((sum,place)=>sum+scorePlace(place,prefs,.5),0);
+const variety=new Set(stops.map(place=>place.category)).size;
+const distancePenalty=Math.abs(routeKm-config.target)*1.4;
+possible.push({stops,distance:routeKm,score:placeScore+variety*2-distancePenalty});
 }
-
-
-/* ========================================================================
-   PEDESTRIAN ROUTING
-======================================================================== */
-
-async function fetchWalkingRoute(
-  start,
-  stops
-){
-
-  const coords =
-    [
-      start,
-      ...stops,
-      start
-    ]
-      .map(
-        p =>
-          `${p.lon},${p.lat}`
-      )
-      .join(";");
-
-
-  const url =
-    `${CONFIG.routing}/${coords}` +
-    `?overview=full&geometries=geojson`;
-
-
-  const response =
-    await fetch(
-      url
-    );
-
-
-  if(!response.ok){
-
-    throw new Error(
-      "Walking route request failed."
-    );
-
-  }
-
-
-  const data =
-    await response.json();
-
-
-  if(
-    !data.routes ||
-    !data.routes.length
-  ){
-
-    throw new Error(
-      "No walking route returned."
-    );
-
-  }
-
-
-  const route =
-    data.routes[0];
-
-
-  const distanceKm =
-    route.distance /
-    1000;
-
-
-  /*
-    Routing engine gives us the geometry.
-    We deliberately calculate time ourselves because the public
-    routing server's duration assumptions may not represent relaxed
-    sightseeing.
-  */
-
-  const walkingSpeed =
-    3.8;
-
-
-  const walkingMin =
-    distanceKm /
-    walkingSpeed *
-    60;
-
-
-  const stopMin =
-    stops.reduce(
-      (sum,p) =>
-        sum +
-        estimateVisitTime(p),
-      0
-    );
-
-
-  const wanderAllowance =
-    (
-      walkingMin +
-      stopMin
-    ) * .10;
-
-
-  return {
-
-    coordsLatLng:
-      route.geometry.coordinates
-        .map(
-          c =>
-            [c[1],c[0]]
-        ),
-
-    distanceKm,
-
-    walkingMin,
-
-    stopMin,
-
-    wanderAllowance,
-
-    durationMin:
-      walkingMin +
-      stopMin +
-      wanderAllowance,
-
-    approximate:false
-
-  };
-
+possible.sort((a,b)=>b.score-a.score);
+const result=[];
+for(const candidate of possible){
+if(result.length>=CONFIG.routesToGenerate)break;
+if(!result.some(existing=>routeOverlap(existing.stops,candidate.stops)>.55))result.push(candidate);
 }
-
-
-/* ========================================================================
-   VISIT TIME
-======================================================================== */
-
+return result;
+}
+async function fetchWalkingRoute(start,stops){
+const coordinates=[start,...stops,start].map(p=>`${p.lon},${p.lat}`).join(";");
+const url=`${CONFIG.routing}/${coordinates}?overview=full&geometries=geojson`;
+const response=await fetch(url);
+if(!response.ok)throw new Error("Walking route request failed.");
+const data=await response.json();
+if(!data.routes?.length)throw new Error("No walking route returned.");
+const route=data.routes[0];
+const distanceKm=route.distance/1000;
+const walkingMin=distanceKm/3.8*60;
+const stopMin=stops.reduce((sum,stop)=>sum+estimateVisitTime(stop),0);
+const wanderAllowance=.1*(walkingMin+stopMin);
+return{coordsLatLng:route.geometry.coordinates.map(c=>[c[1],c[0]]),distanceKm,walkingMin,stopMin,wanderAllowance,durationMin:walkingMin+stopMin+wanderAllowance,approximate:false};
+}
 function estimateVisitTime(place){
-
-  if(
-    place.type?.category ===
-    "food"
-  ){
-
-    return 10;
-
-  }
-
-
-  if(
-    place.type?.label ===
-    "Museum"
-  ){
-
-    return 30;
-
-  }
-
-
-  if(
-    place.type?.category ===
-    "culture"
-  ){
-
-    return 15;
-
-  }
-
-
-  if(
-    place.type?.category ===
-    "history"
-  ){
-
-    return 15;
-
-  }
-
-
-  return 8;
-
+if(place.type?.category==="food")return 10;
+if(place.type?.label==="Museum")return 30;
+if(place.type?.category==="culture"||place.type?.category==="history")return 15;
+return 8;
 }
-
-
-/* ========================================================================
-   FALLBACK ROUTE
-======================================================================== */
-
-function fallbackRoute(
-  start,
-  stops
-){
-
-  const points =
-    [
-      start,
-      ...stops,
-      start
-    ];
-
-
-  let straight =
-    0;
-
-
-  for(
-    let i=0;
-    i<points.length-1;
-    i++
-  ){
-
-    straight +=
-      haversineKm(
-        points[i],
-        points[i+1]
-      );
-
-  }
-
-
-  const distanceKm =
-    straight * 1.35;
-
-
-  const walkingMin =
-    distanceKm /
-    3.8 *
-    60;
-
-
-  const stopMin =
-    stops.reduce(
-      (sum,p)=>
-        sum +
-        estimateVisitTime(p),
-      0
-    );
-
-
-  return {
-
-    coordsLatLng:
-      points.map(
-        p =>
-          [p.lat,p.lon]
-      ),
-
-    distanceKm,
-
-    walkingMin,
-
-    stopMin,
-
-    durationMin:
-      walkingMin +
-      stopMin,
-
-    approximate:true
-
-  };
-
+function fallbackRoute(start,stops){
+const points=[start,...stops,start];
+let straight=0;
+for(let i=0;i<points.length-1;i++)straight+=haversineKm(points[i],points[i+1]);
+const distanceKm=straight*1.35;
+const walkingMin=distanceKm/3.8*60;
+const stopMin=stops.reduce((sum,stop)=>sum+estimateVisitTime(stop),0);
+return{coordsLatLng:points.map(p=>[p.lat,p.lon]),distanceKm,walkingMin,stopMin,durationMin:walkingMin+stopMin,approximate:true};
 }
-
-
-/* ========================================================================
-   NARRATIVE ENGINE
-   ------------------------------------------------------------------------
-   This is intentionally local for now.
-======================================================================== */
-
-const TITLE_ADJECTIVES = [
-
-  "The Unmarked",
-  "The Curious",
-  "The Slightly Odd",
-  "The Overlooked",
-  "The Long Way",
-  "The Sideways",
-  "The Hidden",
-  "The Unplanned",
-  "The Good Detour"
-
-];
-
-
-const TITLE_NOUNS = [
-
-  "Wander",
-  "Circuit",
-  "Detour",
-  "Corners",
-  "Route",
-  "Loop",
-  "Afternoon"
-
-];
-
-
-function generateNarrative(
-  stops,
-  preferences,
-  variant
-){
-
-  const rng =
-    seededRandom(
-      stops.map(
-        p=>p.id
-      ).join("|") +
-      variant
-    );
-
-
-  const adjective =
-    TITLE_ADJECTIVES[
-      Math.floor(
-        rng() *
-        TITLE_ADJECTIVES.length
-      )
-    ];
-
-
-  const noun =
-    TITLE_NOUNS[
-      Math.floor(
-        rng() *
-        TITLE_NOUNS.length
-      )
-    ];
-
-
-  const title =
-    `${adjective} ${noun}`;
-
-
-  const categories =
-    new Set(
-      stops.map(
-        p=>p.category
-      )
-    );
-
-
-  let opening;
-
-
-  if(
-    preferences.food > 1
-  ){
-
-    opening =
-      "This one leaves room for a coffee, a snack or an entirely unnecessary pastry along the way.";
-
-  }
-  else if(
-    preferences.history > 1
-  ){
-
-    opening =
-      "The route keeps pulling you toward the bits of the city where the present hasn't quite erased the past.";
-
-  }
-  else if(
-    preferences.nature > 1
-  ){
-
-    opening =
-      "It looks for pockets of green and places where the city briefly gives way to something quieter.";
-
-  }
-  else if(
-    preferences.quirky > 1
-  ){
-
-    opening =
-      "This is the route for the things that make you stop and think, 'Why is that here?'";
-
-  }
-  else if(
-    preferences.architecture > 1
-  ){
-
-    opening =
-      "Rather than chasing the obvious sights, this one reads the city through the things people built.";
-
-  }
-  else {
-
-    opening =
-      "There isn't a grand theme here so much as a trail of things that look worth investigating.";
-
-  }
-
-
-  const first =
-    stops[0]?.name ||
-    "the starting point";
-
-
-  const last =
-    stops[stops.length-1]?.name ||
-    "somewhere nearby";
-
-
-  const categoryText =
-    [...categories]
-      .slice(0,3)
-      .join(", ");
-
-
-  const narrative =
-    `${opening} Starting with ${first}, it wanders through ${categoryText} before looping back via ${last}.`;
-
-
-  return {
-
-    title,
-
-    narrative
-
-  };
-
+const TITLE_ADJECTIVES=["The Unmarked","The Curious","The Slightly Odd","The Overlooked","The Long Way","The Sideways","The Hidden","The Unplanned","The Good Detour","The Wandering"];
+const TITLE_NOUNS=["Wander","Circuit","Detour","Corners","Route","Loop","Afternoon","Way"];
+function generateNarrative(stops,prefs,seed){
+const random=seededRandom(stops.map(p=>p.id).join("|")+seed);
+const title=`${TITLE_ADJECTIVES[Math.floor(random()*TITLE_ADJECTIVES.length)]} ${TITLE_NOUNS[Math.floor(random()*TITLE_NOUNS.length)]}`;
+const categories=new Set(stops.map(p=>p.category));
+let opening;
+if(prefs.food>1)opening="This one leaves room for a coffee, a snack or an entirely unnecessary pastry along the way.";
+else if(prefs.history>1)opening="The route keeps pulling you toward the bits of the city where the present hasn't quite erased the past.";
+else if(prefs.nature>1)opening="It looks for pockets of green and places where the city briefly gives way to something quieter.";
+else if(prefs.quirky>1)opening="This is the route for the things that make you stop and think, 'Why is that here?'";
+else if(prefs.architecture>1)opening="Rather than chasing the obvious sights, this one reads the city through the things people built.";
+else opening="There isn't a grand theme here so much as a trail of things that look worth investigating.";
+const first=stops[0]?.name||"the starting point";
+const last=stops[stops.length-1]?.name||"somewhere nearby";
+const categoryText=[...categories].slice(0,3).join(", ");
+return{title,narrative:`${opening} Starting with ${first}, it wanders through ${categoryText} before looping back via ${last}.`};
 }
-
-
-/* ========================================================================
-   WALK SCORES
-======================================================================== */
-
-function walkScores(
-  stops,
-  preferences
-){
-
-  if(!stops.length){
-
-    return {
-
-      interesting:"0.0",
-
-      local:"0.0",
-
-      quirky:"0.0"
-
-    };
-
-  }
-
-
-  const avg =
-    field =>
-      stops.reduce(
-        (sum,p)=>
-          sum +
-          (p[field] || 0),
-        0
-      ) /
-      stops.length;
-
-
-  return {
-
-    interesting:
-      Math.min(
-        10,
-        avg("interest") * 2
-      ).toFixed(1),
-
-    local:
-      Math.min(
-        10,
-        Math.max(
-          0,
-          (5 -
-           avg("touristiness")) *
-          2
-        )
-      ).toFixed(1),
-
-    quirky:
-      Math.min(
-        10,
-        avg("quirky") * 2
-      ).toFixed(1)
-
-  };
-
+function walkScores(stops){
+if(!stops.length)return{interesting:"0.0",local:"0.0",quirky:"0.0"};
+const average=key=>stops.reduce((sum,p)=>sum+(p[key]||0),0)/stops.length;
+return{
+interesting:Math.min(10,2*average("interest")).toFixed(1),
+local:Math.min(10,2*average("local")).toFixed(1),
+quirky:Math.min(10,2*average("quirky")).toFixed(1)
+};
 }
-
-
-/* ========================================================================
-   FORMATTERS
-======================================================================== */
-
-function fmtDuration(mins){
-
-  const h =
-    Math.floor(
-      mins/60
-    );
-
-
-  const m =
-    Math.round(
-      mins%60
-    );
-
-
-  if(h > 0){
-
-    return `${h}h ${m}m`;
-
-  }
-
-
-  return `${m}m`;
-
+function fmtDuration(minutes){
+const hours=Math.floor(minutes/60);
+const mins=Math.round(minutes%60);
+return hours?`${hours}h ${mins}m`:`${mins}m`;
 }
-
-
-/* ========================================================================
-   RENDER MAP
-======================================================================== */
-
-function renderWalkOnMap(
-  walk
-){
-
-  clearMapLayers();
-
-
-  document
-    .getElementById(
-      "emptyState"
-    )
-    .style.display =
-      "none";
-
-
-  renderStartMarker(
-    walk.start
-  );
-
-
-  if(
-    walk.geo &&
-    walk.geo.coordsLatLng &&
-    walk.geo.coordsLatLng.length > 1
-  ){
-
-    const poly =
-      L.polyline(
-        walk.geo.coordsLatLng,
-        {
-
-          color:
-            walk.geo.approximate
-              ? "#FF6B4A"
-              : "#1E7A5F",
-
-          weight:
-            4,
-
-          opacity:
-            .85,
-
-          dashArray:
-            walk.geo.approximate
-              ? "6,6"
-              : null
-
-        }
-
-      ).addTo(
-        routeLayer
-      );
-
-
-    map.fitBounds(
-      poly.getBounds(),
-      {
-        padding:
-          [60,60]
-      }
-    );
-
-  }
-
-
-  walk.stops.forEach(
-    (place,index)=>{
-
-      const marker =
-        L.marker(
-
-          [
-            place.lat,
-            place.lon
-          ],
-
-          {
-
-            icon:
-              L.divIcon({
-
-                className:"",
-
-                html:
-                  `<div class="stop-marker">${index+1}</div>`,
-
-                iconSize:
-                  [28,28],
-
-                iconAnchor:
-                  [14,14]
-
-              })
-
-          }
-
-        )
-
-
-        .bindPopup(
-
-          `<b>${index+1}. ${escapeHtml(place.name)}</b>` +
-          `<br>` +
-          `${escapeHtml(place.description)}`
-
-        )
-
-
-        .addTo(
-          routeLayer
-        );
-
-
-      stopMarkers.push(
-        marker
-      );
-
-    }
-
-  );
-
+function renderWalkOnMap(walk){
+clearMapLayers();
+document.getElementById("emptyState").style.display="none";
+renderStartMarker(walk.start);
+if(walk.geo?.coordsLatLng?.length>1){
+const line=L.polyline(walk.geo.coordsLatLng,{color:walk.geo.approximate?"#FF6B4A":"#1E7A5F",weight:4,opacity:.85,dashArray:walk.geo.approximate?"6,6":null}).addTo(routeLayer);
+map.fitBounds(line.getBounds(),{padding:[60,60]});
 }
-
-
-/* ========================================================================
-   ESCAPE HTML
-======================================================================== */
-
+walk.stops.forEach((stop,index)=>{
+const marker=L.marker([stop.lat,stop.lon],{icon:L.divIcon({className:"",html:`<div class="stop-marker">${index+1}</div>`,iconSize:[28,28],iconAnchor:[14,14]})}).bindPopup(`<b>${index+1}. ${escapeHtml(stop.name)}</b><br>${escapeHtml(stop.description)}`).addTo(routeLayer);
+stopMarkers.push(marker);
+});
+}
 function escapeHtml(value){
-
-  return String(value)
-    .replace(
-      /&/g,
-      "&amp;"
-    )
-    .replace(
-      /</g,
-      "&lt;"
-    )
-    .replace(
-      />/g,
-      "&gt;"
-    )
-    .replace(
-      /"/g,
-      "&quot;"
-    )
-    .replace(
-      /'/g,
-      "&#039;"
-    );
-
+return String(value).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");
 }
-
-
-/* ========================================================================
-   FLY TO STOP
-======================================================================== */
-
 function flyToStop(index){
-
-  const marker =
-    stopMarkers[index];
-
-
-  if(!marker){
-
-    return;
-
-  }
-
-
-  map.flyTo(
-    marker.getLatLng(),
-    17,
-    {
-      duration:
-        .6
-    }
-  );
-
-
-  marker.openPopup();
-
+const marker=stopMarkers[index];
+if(marker){map.flyTo(marker.getLatLng(),17,{duration:.6});marker.openPopup();}
 }
-
-
-/* ========================================================================
-   UI
-======================================================================== */
-
 function buildUI(){
-
-  /* DISTANCES */
-
-  const distanceRow =
-    document.getElementById(
-      "distanceRow"
-    );
-
-
-  Object.entries(
-    DISTANCES
-  ).forEach(
-    ([key,distance])=>{
-
-      const element =
-        document.createElement(
-          "div"
-        );
-
-
-      element.className =
-        "distance-opt" +
-        (
-          key === state.distance
-            ? " active"
-            : ""
-        );
-
-
-      element.innerHTML =
-        `<strong>${distance.label}</strong>` +
-        distance.sub;
-
-
-      element.onclick =
-        ()=>{
-
-          state.distance =
-            key;
-
-
-          document
-            .querySelectorAll(
-              ".distance-opt"
-            )
-            .forEach(
-              el =>
-                el.classList.remove(
-                  "active"
-                )
-            );
-
-
-          element.classList.add(
-            "active"
-          );
-
-        };
-
-
-      distanceRow.appendChild(
-        element
-      );
-
-    }
-  );
-
-
-  /* QUICK PURPOSES */
-
-  const quick =
-    document.getElementById(
-      "quickPurposes"
-    );
-
-
-  QUICK_PURPOSES.forEach(
-    purpose=>{
-
-      const chip =
-        document.createElement(
-          "div"
-        );
-
-
-      chip.className =
-        "purpose-chip";
-
-
-      chip.textContent =
-        purpose;
-
-
-      chip.onclick =
-        ()=>{
-
-          document
-            .querySelectorAll(
-              ".purpose-chip"
-            )
-            .forEach(
-              c =>
-                c.classList.remove(
-                  "active"
-                )
-            );
-
-
-          chip.classList.add(
-            "active"
-          );
-
-
-          const input =
-            document.getElementById(
-              "purposeInput"
-            );
-
-
-          if(
-            purpose ===
-            "Surprise me"
-          ){
-
-            input.value =
-              "Surprise me with something interesting and unexpected.";
-
-          }
-          else {
-
-            input.value =
-              purpose;
-
-          }
-
-        };
-
-
-      quick.appendChild(
-        chip
-      );
-
-    }
-  );
-
-
-  /* LOCATION */
-
-  document
-    .getElementById(
-      "locationButton"
-    )
-    .onclick =
-      useCurrentLocation;
-
-
-  /* GENERATE */
-
-  document
-    .getElementById(
-      "generateBtn"
-    )
-    .onclick =
-      handleGenerate;
-
+const distanceRow=document.getElementById("distanceRow");
+Object.entries(DISTANCES).forEach(([key,value])=>{
+const button=document.createElement("div");
+button.className="distance-opt"+(key===state.distance?" active":"");
+button.innerHTML=`<strong>${value.label}</strong>${value.sub}`;
+button.onclick=()=>{
+state.distance=key;
+document.querySelectorAll(".distance-opt").forEach(el=>el.classList.remove("active"));
+button.classList.add("active");
+};
+distanceRow.appendChild(button);
+});
+const purposes=document.getElementById("quickPurposes");
+QUICK_PURPOSES.forEach(purpose=>{
+const chip=document.createElement("div");
+chip.className="purpose-chip";
+chip.textContent=purpose;
+chip.onclick=()=>{
+document.querySelectorAll(".purpose-chip").forEach(el=>el.classList.remove("active"));
+chip.classList.add("active");
+document.getElementById("purposeInput").value=purpose==="Surprise me"?"Surprise me with something interesting and unexpected.":purpose;
+};
+purposes.appendChild(chip);
+});
+document.getElementById("locationButton").onclick=useCurrentLocation;
+document.getElementById("generateBtn").onclick=handleGenerate;
 }
-
-
-/* ========================================================================
-   CURRENT LOCATION
-======================================================================== */
-
 async function useCurrentLocation(){
-
-  const button =
-    document.getElementById(
-      "locationButton"
-    );
-
-
-  const help =
-    document.getElementById(
-      "locationHelp"
-    );
-
-
-  button.disabled =
-    true;
-
-
-  help.textContent =
-    "Finding you…";
-
-
-  try{
-
-    const location =
-      await getCurrentLocation();
-
-
-    state.start =
-      location;
-
-
-    state.startText =
-      location.displayName;
-
-
-    document
-      .getElementById(
-        "startInput"
-      )
-      .value =
-        "Your current location";
-
-
-    help.textContent =
-      "Location acquired. Generate a wander whenever you're ready.";
-
-
-    map.setView(
-      [
-        location.lat,
-        location.lon
-      ],
-      15
-    );
-
-
-    renderStartMarker(
-      location
-    );
-
-  }
-  catch(error){
-
-    help.textContent =
-      error.message;
-
-  }
-  finally{
-
-    button.disabled =
-      false;
-
-  }
-
+const button=document.getElementById("locationButton");
+const help=document.getElementById("locationHelp");
+button.disabled=true;
+help.textContent="Finding you…";
+try{
+const location=await getCurrentLocation();
+state.start=location;
+state.startText=location.displayName;
+document.getElementById("startInput").value="Your current location";
+help.textContent="Location acquired. Generate a wander whenever you're ready.";
+map.setView([location.lat,location.lon],15);
+renderStartMarker(location);
+}catch(error){help.textContent=error.message}
+finally{button.disabled=false}
 }
-
-
-/* ========================================================================
-   START RESOLUTION
-======================================================================== */
-
 async function resolveStart(){
-
-  const input =
-    document
-      .getElementById(
-        "startInput"
-      )
-      .value
-      .trim();
-
-
-  if(
-    state.start &&
-    (
-      input ===
-      "Your current location"
-    )
-  ){
-
-    return state.start;
-
-  }
-
-
-  if(!input){
-
-    /*
-      If the field is blank, automatically try current location.
-    */
-
-    return await getCurrentLocation();
-
-  }
-
-
-  return await geocode(
-    input
-  );
-
+const value=document.getElementById("startInput").value.trim();
+if(state.start&&value==="Your current location")return state.start;
+if(value)return geocode(value);
+return getCurrentLocation();
 }
-
-
-/* ========================================================================
-   STATUS
-======================================================================== */
-
-function setStatus(
-  message,
-  warning=false
-){
-
-  const element =
-    document.getElementById(
-      "statusNote"
-    );
-
-
-  element.textContent =
-    message || "";
-
-
-  element.className =
-    "status-note" +
-    (
-      warning
-        ? " warn"
-        : ""
-    );
-
+function setStatus(message,warn=false){
+const status=document.getElementById("statusNote");
+status.textContent=message||"";
+status.className="status-note"+(warn?" warn":"");
 }
-
-
-/* ========================================================================
-   GENERATE
-======================================================================== */
-
 async function handleGenerate(){
-
-  const button =
-    document.getElementById(
-      "generateBtn"
-    );
-
-
-  button.disabled =
-    true;
-
-
-  document
-    .getElementById(
-      "walksContainer"
-    )
-    .innerHTML =
-      "";
-
-
-  document
-    .getElementById(
-      "detailPanel"
-    )
-    .classList.remove(
-      "open"
-    );
-
-
-  state.currentWalks =
-    [];
-
-
-  state.selectedWalk =
-    null;
-
-
-  try{
-
-    /* ---------------------------------------------------
-       1. Resolve starting point
-    --------------------------------------------------- */
-
-    setStatus(
-      "Finding your starting point…"
-    );
-
-
-    const start =
-      await resolveStart();
-
-
-    state.start =
-      start;
-
-
-    map.setView(
-      [
-        start.lat,
-        start.lon
-      ],
-      15
-    );
-
-
-    renderStartMarker(
-      start
-    );
-
-
-    /* ---------------------------------------------------
-       2. Interpret request
-    --------------------------------------------------- */
-
-    const purpose =
-      document
-        .getElementById(
-          "purposeInput"
-        )
-        .value
-        .trim();
-
-
-    state.purpose =
-      purpose;
-
-
-    const preferences =
-      interpretPurpose(
-        purpose
-      );
-
-
-    state.preferences =
-      preferences;
-
-
-    /* ---------------------------------------------------
-       3. Discover places
-    --------------------------------------------------- */
-
-    const distanceConfig =
-      DISTANCES[
-        state.distance
-      ];
-
-
-    setStatus(
-      "Looking around you for interesting places…"
-    );
-
-
-    const places =
-      await discoverPlaces(
-        start,
-        distanceConfig.radius
-      );
-
-
-    if(
-      places.length <
-      distanceConfig.stops[0]
-    ){
-
-      throw new Error(
-        "There aren't enough mapped places nearby to build a good walk. Try a longer distance."
-      );
-
-    }
-
-
-    /* ---------------------------------------------------
-       4. Generate candidate walks
-    --------------------------------------------------- */
-
-    setStatus(
-      `Found ${places.length} places. Building some possible wanders…`
-    );
-
-
-    const routes =
-      generateWalkCandidates(
-        start,
-        places,
-        preferences,
-        state.distance
-      );
-
-
-    if(!routes.length){
-
-      throw new Error(
-        "I found places nearby, but couldn't combine them into a sensible walking loop. Try increasing the distance."
-      );
-
-    }
-
-
-    /* ---------------------------------------------------
-       5. Get real pedestrian routes
-    --------------------------------------------------- */
-
-    const walks = [];
-
-
-    for(
-      let i=0;
-      i<routes.length;
-      i++
-    ){
-
-      setStatus(
-        `Walking the route ${i+1} of ${routes.length}…`
-      );
-
-
-      const candidate =
-        routes[i];
-
-
-      let geo;
-
-
-      try{
-
-        geo =
-          await fetchWalkingRoute(
-            start,
-            candidate.stops
-          );
-
-      }
-      catch(error){
-
-        console.warn(
-          "Walking router failed:",
-          error
-        );
-
-
-        geo =
-          fallbackRoute(
-            start,
-            candidate.stops
-          );
-
-      }
-
-
-      /*
-        Generate the editorial wrapper.
-      */
-
-      const narrative =
-        generateNarrative(
-          candidate.stops,
-          preferences,
-          i
-        );
-
-
-      walks.push({
-
-        title:
-          narrative.title,
-
-        narrative:
-          narrative.narrative,
-
-        stops:
-          candidate.stops,
-
-        start,
-
-        geo,
-
-        scores:
-          walkScores(
-            candidate.stops,
-            preferences
-          )
-
-      });
-
-    }
-
-
-    /* ---------------------------------------------------
-       6. Render
-    --------------------------------------------------- */
-
-    state.currentWalks =
-      walks;
-
-
-    renderWalkCards(
-      walks
-    );
-
-
-    selectWalk(
-      0
-    );
-
-
-    setStatus(
-      `Discovered ${places.length} places and built ${walks.length} walks.`
-    );
-
-  }
-  catch(error){
-
-    console.error(
-      error
-    );
-
-
-    setStatus(
-      error.message ||
-      "Something went wrong.",
-      true
-    );
-
-  }
-  finally{
-
-    button.disabled =
-      false;
-
-  }
-
+const button=document.getElementById("generateBtn");
+button.disabled=true;
+document.getElementById("walksContainer").innerHTML="";
+document.getElementById("detailPanel").classList.remove("open");
+state.currentWalks=[];
+state.selectedWalk=null;
+state.searchSeed++;
+try{
+setStatus("Finding your starting point…");
+const start=await resolveStart();
+state.start=start;
+map.setView([start.lat,start.lon],15);
+renderStartMarker(start);
+const purpose=document.getElementById("purposeInput").value.trim();
+const preferences=interpretPurpose(state.purpose=purpose);
+state.preferences=preferences;
+const distance=DISTANCES[state.distance];
+setStatus("Looking around you for interesting places…");
+let places=await discoverPlaces(start,Math.round(distance.radius*CONFIG.discoveryRadiusMultiplier));
+if(places.length<distance.stops[0]){
+setStatus("The first search was a little sparse. Looking a little further out…");
+places=await discoverPlaces(start,distance.radius);
 }
-
-
-/* ========================================================================
-   WALK CARDS
-======================================================================== */
-
-function renderWalkCards(
-  walks
-){
-
-  const container =
-    document.getElementById(
-      "walksContainer"
-    );
-
-
-  container.innerHTML =
-    `<div class="section-eyebrow">
-       Suggested walks
-     </div>`;
-
-
-  walks.forEach(
-    (walk,index)=>{
-
-      const card =
-        document.createElement(
-          "div"
-        );
-
-
-      card.className =
-        "walk-card";
-
-
-      card.innerHTML = `
-
-        <p class="wc-title">
-          ${escapeHtml(walk.title)}
-        </p>
-
-        <p class="wc-narrative">
-          ${escapeHtml(walk.narrative)}
-        </p>
-
-        <div class="wc-meta">
-
-          <span>
-            ${walk.geo.distanceKm.toFixed(1)} km
-          </span>
-
-          <span>·</span>
-
-          <span>
-            ${fmtDuration(walk.geo.durationMin)}
-          </span>
-
-          <span>·</span>
-
-          <span>
-            ${walk.stops.length} stops
-          </span>
-
-          ${
-            walk.geo.approximate
-              ? `
-                <span>·</span>
-                <span>estimated route</span>
-              `
-              : ""
-          }
-
-        </div>
-
-
-        <div class="wc-scores">
-
-          <div class="wc-score">
-            <div class="num">
-              ${walk.scores.interesting}
-            </div>
-            <div class="lbl">
-              Interesting
-            </div>
-          </div>
-
-          <div class="wc-score">
-            <div class="num">
-              ${walk.scores.local}
-            </div>
-            <div class="lbl">
-              Local
-            </div>
-          </div>
-
-          <div class="wc-score">
-            <div class="num">
-              ${walk.scores.quirky}
-            </div>
-            <div class="lbl">
-              Quirky
-            </div>
-          </div>
-
-        </div>
-
-      `;
-
-
-      card.onclick =
-        () =>
-          selectWalk(
-            index
-          );
-
-
-      container.appendChild(
-        card
-      );
-
-    }
-  );
-
+if(places.length<distance.stops[0])throw new Error("There aren't enough mapped places nearby to build a good walk. Try a longer distance.");
+setStatus(`Found ${places.length} possibilities. Building some different wanders…`);
+const candidates=generateWalkCandidates(start,places,preferences,state.distance);
+if(!candidates.length)throw new Error("I found places nearby, but couldn't combine them into a sensible walking loop. Try increasing the distance.");
+const walks=[];
+for(let i=0;i<candidates.length;i++){
+setStatus(`Walking the route ${i+1} of ${candidates.length}…`);
+const candidate=candidates[i];
+let geo;
+try{geo=await fetchWalkingRoute(start,candidate.stops)}catch(error){console.warn("Walking router failed:",error);geo=fallbackRoute(start,candidate.stops)}
+const narrative=generateNarrative(candidate.stops,preferences,i);
+walks.push({title:narrative.title,narrative:narrative.narrative,stops:candidate.stops,start,geo,scores:walkScores(candidate.stops)});
 }
-
-
-/* ========================================================================
-   SELECT WALK
-======================================================================== */
-
-function selectWalk(
-  index
-){
-
-  state.selectedWalk =
-    index;
-
-
-  document
-    .querySelectorAll(
-      ".walk-card"
-    )
-    .forEach(
-      (card,i)=>
-        card.classList.toggle(
-          "selected",
-          i === index
-        )
-    );
-
-
-  const walk =
-    state.currentWalks[
-      index
-    ];
-
-
-  if(!walk){
-
-    return;
-
-  }
-
-
-  renderWalkOnMap(
-    walk
-  );
-
-
-  renderDetail(
-    walk
-  );
-
+state.currentWalks=walks;
+renderWalkCards(walks);
+selectWalk(0);
+setStatus(`Discovered ${places.length} places and built ${walks.length} walks.`);
+}catch(error){
+console.error(error);
+setStatus(error.message||"Something went wrong.",true);
+}finally{
+button.disabled=false;
 }
-
-
-/* ========================================================================
-   DETAIL
-======================================================================== */
-
-function renderDetail(
-  walk
-){
-
-  const element =
-    document.getElementById(
-      "detailPanel"
-    );
-
-
-  element.classList.add(
-    "open"
-  );
-
-
-  element.innerHTML = `
-
-    <div class="section-eyebrow">
-      Walk detail
-    </div>
-
-    <h2>
-      ${escapeHtml(walk.title)}
-    </h2>
-
-    <div class="d-meta">
-
-      ${walk.geo.distanceKm.toFixed(1)} km
-      · approximately
-      ${fmtDuration(walk.geo.durationMin)}
-
-      ${
-        walk.geo.approximate
-          ? " · estimated"
-          : ""
-      }
-
-    </div>
-
-    <p class="d-narrative">
-      ${escapeHtml(walk.narrative)}
-    </p>
-
-    <div
-      class="stop-list"
-      id="stopList"
-    ></div>
-
-  `;
-
-
-  const list =
-    document.getElementById(
-      "stopList"
-    );
-
-
-  walk.stops.forEach(
-    (place,index)=>{
-
-      const item =
-        document.createElement(
-          "div"
-        );
-
-
-      item.className =
-        "stop-item";
-
-
-      item.innerHTML = `
-
-        <div class="stop-num">
-          ${String(index+1).padStart(2,"0")}
-        </div>
-
-        <div class="stop-body">
-
-          <div class="stop-name">
-            ${escapeHtml(place.name)}
-          </div>
-
-          <div class="stop-desc">
-            ${escapeHtml(place.description)}
-          </div>
-
-          <div class="source-badge">
-            OpenStreetMap · ${escapeHtml(place.type.label)}
-          </div>
-
-        </div>
-
-      `;
-
-
-      item.onclick =
-        () =>
-          flyToStop(
-            index
-          );
-
-
-      list.appendChild(
-        item
-      );
-
-    }
-  );
-
-
-  element.scrollIntoView({
-    behavior:"smooth",
-    block:"nearest"
-  });
-
 }
-
-
-/* ========================================================================
-   INITIALISE
-======================================================================== */
-
+function renderWalkCards(walks){
+const container=document.getElementById("walksContainer");
+container.innerHTML='<div class="section-eyebrow">Suggested walks</div>';
+walks.forEach((walk,index)=>{
+const card=document.createElement("div");
+card.className="walk-card";
+card.innerHTML=`<p class="wc-title">${escapeHtml(walk.title)}</p><p class="wc-narrative">${escapeHtml(walk.narrative)}</p><div class="wc-meta"><span>${walk.geo.distanceKm.toFixed(1)} km</span><span>·</span><span>${fmtDuration(walk.geo.durationMin)}</span><span>·</span><span>${walk.stops.length} stops</span>${walk.geo.approximate?'<span>·</span><span>estimated route</span>':""}</div><div class="wc-scores"><div class="wc-score"><div class="num">${walk.scores.interesting}</div><div class="lbl">Interesting</div></div><div class="wc-score"><div class="num">${walk.scores.local}</div><div class="lbl">Local</div></div><div class="wc-score"><div class="num">${walk.scores.quirky}</div><div class="lbl">Quirky</div></div></div>`;
+card.onclick=()=>selectWalk(index);
+container.appendChild(card);
+});
+}
+function selectWalk(index){
+state.selectedWalk=index;
+document.querySelectorAll(".walk-card").forEach((card,i)=>card.classList.toggle("selected",i===index));
+const walk=state.currentWalks[index];
+if(walk){renderWalkOnMap(walk);renderDetail(walk);}
+}
+function renderDetail(walk){
+const detail=document.getElementById("detailPanel");
+detail.classList.add("open");
+detail.innerHTML=`<div class="section-eyebrow">Walk detail</div><h2>${escapeHtml(walk.title)}</h2><div class="d-meta">${walk.geo.distanceKm.toFixed(1)} km · approximately ${fmtDuration(walk.geo.durationMin)}${walk.geo.approximate?" · estimated":""}</div><p class="d-narrative">${escapeHtml(walk.narrative)}</p><div class="stop-list" id="stopList"></div>`;
+const list=document.getElementById("stopList");
+walk.stops.forEach((stop,index)=>{
+const item=document.createElement("div");
+item.className="stop-item";
+item.innerHTML=`<div class="stop-num">${String(index+1).padStart(2,"0")}</div><div class="stop-body"><div class="stop-name">${escapeHtml(stop.name)}</div><div class="stop-desc">${escapeHtml(stop.description)}</div><div class="source-badge">OpenStreetMap · ${escapeHtml(stop.type.label)}</div></div>`;
+item.onclick=()=>flyToStop(index);
+list.appendChild(item);
+});
+detail.scrollIntoView({behavior:"smooth",block:"nearest"});
+}
 function init(){
-
-  buildUI();
-
-  initMap();
-
+buildUI();
+initMap();
 }
-
-
 init();
-
 </script>
-
 </body>
 </html>
