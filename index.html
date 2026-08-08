@@ -441,7 +441,7 @@ function buildOverpassQueries(start,radius){
   const queries=[
 `[out:json][timeout:12];
 (
-  nwr${area}[tourism];
+  nwr${area}[tourism~"attraction|museum|gallery|artwork|viewpoint|zoo|theme_park|aquarium|gallery"];
   nwr${area}[historic];
   nwr${area}[memorial];
   nwr${area}[amenity~"arts_centre|cafe|restaurant|theatre|cinema|library|marketplace"];
@@ -497,6 +497,33 @@ async function queryOverpass(query){
   throw lastError||new Error("Place discovery failed.");
 }
 
+function capCategoryShare(places,maxTotal,maxShare){
+  const byCategory={};
+  for(const place of places){
+    (byCategory[place.category]=byCategory[place.category]||[]).push(place);
+  }
+  const categories=Object.keys(byCategory);
+  const perCategoryCap=Math.max(2,Math.round(maxTotal*maxShare));
+
+  const result=[];
+  const leftovers=[];
+  for(const cat of categories){
+    const items=byCategory[cat];
+    result.push(...items.slice(0,perCategoryCap));
+    leftovers.push(...items.slice(perCategoryCap));
+  }
+
+  // only top up from the capped-out categories if the balanced pool is too
+  // thin to build a good route from - don't backfill just to hit maxTotal,
+  // or the cap defeats its own purpose
+  const minViablePool=Math.max(15,Math.round(maxTotal*0.25));
+  if(result.length<minViablePool){
+    result.push(...leftovers.slice(0,minViablePool-result.length));
+  }
+
+  return result.sort(()=>Math.random()-.5).slice(0,maxTotal);
+}
+
 async function discoverPlaces(start,radius){
   const queries=buildOverpassQueries(start,radius);
   const all=[];
@@ -539,8 +566,9 @@ async function discoverPlaces(start,radius){
 
   result=result
     .filter(place=>haversineKm(start,place)>0.15)
-    .sort(()=>Math.random()-.5)
-    .slice(0,CONFIG.maxCandidates);
+    .sort(()=>Math.random()-.5);
+
+  result=capCategoryShare(result,CONFIG.maxCandidates,.32);
 
   return result;
 }
@@ -556,7 +584,7 @@ function normalisePlace(element,tags,lat,lon,name){
     lon,
     type,
     category:type.category,
-    description:createPlaceDescription(tags,type),
+    description:createPlaceDescription(tags,type,`${element.type}-${element.id}`),
     tags,
     touristiness:estimateTouristiness(tags,type),
     interest:calculateInterest(tags,type),
@@ -604,18 +632,66 @@ function detectPlaceType(tags){
   return{label:"Interesting place",category:"interest"};
 }
 
-function createPlaceDescription(tags,type){
+const FALLBACK_PHRASES={
+  food:[
+    "A local spot to grab something to eat or drink along the way.",
+    "Worth a stop if you fancy a coffee or a bite mid-walk.",
+    "A casual place for food or drink partway through the route.",
+    "Not extensively documented, but a handy stop for a break."
+  ],
+  nature:[
+    "A pocket of green worth a short detour.",
+    "An open space to catch your breath partway through the walk.",
+    "A quiet outdoor spot away from the main streets.",
+    "Worth pausing here for the surroundings alone."
+  ],
+  history:[
+    "A site with some history behind it, even if the details are thin on the map.",
+    "Marked as historically significant, worth a closer look in person.",
+    "Part of the older layer of the city, easy to miss if you're not looking.",
+    "One of the area's older landmarks, lightly documented but worth a glance."
+  ],
+  culture:[
+    "A cultural spot worth a short visit if the timing works out.",
+    "Part of the local arts and culture scene.",
+    "Worth a look inside if it happens to be open.",
+    "A cultural landmark, lightly documented but locally known."
+  ],
+  architecture:[
+    "Worth a look up as you pass - the building itself is the point of interest.",
+    "An example of the area's architecture worth a glance.",
+    "Structurally interesting enough to justify the detour.",
+    "Worth pausing to look at, even briefly."
+  ],
+  quirky:[
+    "One of those small oddities that make a walk worth taking.",
+    "Not a major sight, but the kind of thing worth noticing.",
+    "A minor curiosity worth a second look.",
+    "The sort of detail most people walk straight past."
+  ],
+  interest:[
+    "Marked as worth a look, even without much detail attached.",
+    "An interesting stop worth including on the way.",
+    "Not extensively documented, but flagged as worth a visit.",
+    "Worth a short detour to see for yourself."
+  ]
+};
+
+function createPlaceDescription(tags,type,seed){
   const descriptions=[];
   if(tags.description)descriptions.push(tags.description);
+  if(tags.cuisine)descriptions.push(`${humaniseTag(tags.cuisine)} cuisine`);
   if(tags.historic)descriptions.push(humaniseTag(tags.historic));
-  if(tags.tourism)descriptions.push(humaniseTag(tags.tourism));
-  if(tags.amenity)descriptions.push(humaniseTag(tags.amenity));
-  if(tags.leisure)descriptions.push(humaniseTag(tags.leisure));
+  if(tags.tourism&&!descriptions.length)descriptions.push(humaniseTag(tags.tourism));
   if(tags.architect)descriptions.push(`designed by ${tags.architect}`);
   if(tags.start_date)descriptions.push(`dating from ${tags.start_date}`);
-  return descriptions.length
-    ?descriptions.slice(0,2).join(" · ")
-    :`${type.label} worth exploring along the way.`;
+  if(tags.brand)descriptions.push(`part of the ${tags.brand} chain`);
+
+  if(descriptions.length)return descriptions.slice(0,2).join(" · ");
+
+  const pool=FALLBACK_PHRASES[type.category]||FALLBACK_PHRASES.interest;
+  const random=seededRandom(seed||type.label);
+  return pool[Math.floor(random()*pool.length)];
 }
 
 function humaniseTag(value){
@@ -713,6 +789,15 @@ function scorePlace(place,prefs){
   score+=place.architecture*prefs.architecture;
   score+=place.local*prefs.local;
   score-=place.touristiness*prefs.touristPenalty*.5;
+
+  // cafes/restaurants are numerous almost everywhere - don't let base rate
+  // dominate the walk unless the person actually asked for food
+  if(place.category==="food"&&prefs.food<=.5)score-=1.5;
+
+  // chain/franchise locations tend to read identically wherever you find
+  // them; nudge toward independent places unless food was requested
+  if(place.tags&&place.tags.brand&&prefs.food<=.5)score-=1;
+
   return score;
 }
 
@@ -769,6 +854,9 @@ function buildCandidateRoute(start,candidates,distanceConfig,seed){
 
     if(!available.length)break;
 
+    const categoryCounts={};
+    chosen.forEach(s=>{ categoryCounts[s.category]=(categoryCounts[s.category]||0)+1; });
+
     const scored=available.map(item=>{
       const toPlace=haversineKm(current,item.place);
       const home=haversineKm(item.place,start);
@@ -782,10 +870,11 @@ function buildCandidateRoute(start,candidates,distanceConfig,seed){
       if(projected>distanceConfig.target)
         score-=(projected-distanceConfig.target)*3;
 
-      if(
-        chosen.length&&
-        chosen[chosen.length-1].category===item.place.category
-      )score-=1.5;
+      // escalating penalty for repeating a category already used in this
+      // route (not just the immediately previous stop) - keeps a walk
+      // from stacking three cafes just because the pool skewed that way
+      const priorCount=categoryCounts[item.place.category]||0;
+      if(priorCount>0)score-=priorCount*2.2;
 
       score+=random()*2;
 
@@ -1069,27 +1158,55 @@ function generateNarrative(stops,prefs,seed){
     stops.map(place=>place.category)
   );
 
-  let narrative;
+  const NARRATIVE_VARIANTS={
+    food:[
+      "This one leaves room for a coffee, a snack or an entirely unnecessary pastry along the way.",
+      "There's a built-in excuse to stop and eat somewhere partway through.",
+      "Food shapes the route here more than sightseeing does.",
+      "Expect at least one good reason to sit down and order something."
+    ],
+    history:[
+      "The route keeps pulling you toward the bits of the city where the present hasn't quite erased the past.",
+      "It threads through the older layers of the area, the parts most people walk straight past.",
+      "History isn't the backdrop here so much as the point of the walk.",
+      "Several stops trade on what used to be here rather than what is."
+    ],
+    nature:[
+      "It looks for pockets of green and places where the city briefly gives way to something quieter.",
+      "The route trades pavement for green wherever it reasonably can.",
+      "Expect more open sky than storefronts on this one.",
+      "It leans toward the quieter, greener parts of the area rather than the busy strip."
+    ],
+    quirky:[
+      "This is the route for the things that make you stop and think, 'Why is that here?'",
+      "It favours the odd and overlooked over the obviously photogenic.",
+      "Expect a few stops that don't quite explain themselves.",
+      "This one collects the small oddities most itineraries skip past."
+    ],
+    architecture:[
+      "Rather than chasing the obvious sights, this one reads the city through the things people built.",
+      "It's less about what happened here and more about what still stands.",
+      "Buildings do the talking on this route more than plaques or signage.",
+      "Worth looking up more than usual on this one."
+    ],
+    general:[
+      "There isn't a grand theme here so much as a trail of things that look worth investigating.",
+      "It's a fairly even mix rather than leaning hard into any one thing.",
+      "No single theme dominates - just a reasonable spread of things worth a look.",
+      "This one doesn't commit to a theme, just a decent handful of stops worth the detour."
+    ]
+  };
 
-  if(prefs.food>1){
-    narrative=
-      "This one leaves room for a coffee, a snack or an entirely unnecessary pastry along the way.";
-  }else if(prefs.history>1){
-    narrative=
-      "The route keeps pulling you toward the bits of the city where the present hasn't quite erased the past.";
-  }else if(prefs.nature>1){
-    narrative=
-      "It looks for pockets of green and places where the city briefly gives way to something quieter.";
-  }else if(prefs.quirky>1){
-    narrative=
-      "This is the route for the things that make you stop and think, 'Why is that here?'";
-  }else if(prefs.architecture>1){
-    narrative=
-      "Rather than chasing the obvious sights, this one reads the city through the things people built.";
-  }else{
-    narrative=
-      "There isn't a grand theme here so much as a trail of things that look worth investigating.";
-  }
+  const dominant=
+    prefs.food>1?"food":
+    prefs.history>1?"history":
+    prefs.nature>1?"nature":
+    prefs.quirky>1?"quirky":
+    prefs.architecture>1?"architecture":
+    "general";
+
+  const variants=NARRATIVE_VARIANTS[dominant];
+  const narrative=variants[Math.floor(random()*variants.length)];
 
   const first=stops[0]?.name||"the starting point";
   const last=stops[stops.length-1]?.name||"somewhere nearby";
