@@ -80,6 +80,7 @@ input[type=text]::placeholder{color:var(--cream-dim);opacity:.7}
 .leaflet-container{font-family:Inter,sans-serif}
 .stop-marker{background:var(--panel);border:2px solid var(--gold);color:var(--cream);border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:500;box-shadow:0 2px 8px rgba(23,27,24,.18)}
 .start-marker{background:var(--rust);border:2px solid #fff;color:var(--cream);border-radius:50%;width:16px;height:16px;box-shadow:0 0 0 6px rgba(255,107,74,.18),0 2px 6px rgba(23,27,24,.2)}
+.end-marker{background:var(--gold);border:2px solid #fff;color:var(--cream);border-radius:50%;width:16px;height:16px;box-shadow:0 0 0 6px rgba(30,122,95,.2),0 2px 6px rgba(23,27,24,.2)}
 .leaflet-popup-content-wrapper{background:var(--panel-raised);color:var(--cream);border-radius:12px;box-shadow:0 8px 24px rgba(23,27,24,.14)}
 .leaflet-popup-content{font-family:Inter,sans-serif;font-size:13px;margin:10px 12px}
 .leaflet-popup-content b{font-family:Sora,sans-serif;font-size:14.5px}
@@ -107,6 +108,9 @@ input[type=text]::placeholder{color:var(--cream-dim);opacity:.7}
 <button class="location-button" id="locationButton" title="Use my current location">From here</button>
 </div>
 <div class="location-help" id="locationHelp">Enter somewhere, or use your current location.</div>
+<label class="field-label">Destination (optional)</label>
+<input id="destinationInput" type="text" placeholder="Leave blank to loop back to your start">
+<div class="location-help">If set, the walk finishes here instead of looping back.</div>
 <label class="field-label">Walking distance</label>
 <div class="distance-row" id="distanceRow"></div>
 <label class="field-label">What are you in the mood for?</label>
@@ -146,6 +150,7 @@ const CONFIG={
 const state={
   distance:"medium",
   start:null,
+  destination:null,
   startText:"",
   purpose:"",
   preferences:null,
@@ -153,7 +158,7 @@ const state={
   selectedWalk:null,
   searchId:0
 };
-let map=null,startMarker=null,routeLayer=null,stopMarkers=[];
+let map=null,startMarker=null,endMarker=null,routeLayer=null,stopMarkers=[];
 
 const DISTANCES={
   short:{
@@ -217,6 +222,10 @@ function clearMapLayers(){
     map.removeLayer(startMarker);
     startMarker=null;
   }
+  if(endMarker){
+    map.removeLayer(endMarker);
+    endMarker=null;
+  }
 }
 
 function renderStartMarker(place){
@@ -232,6 +241,21 @@ function renderStartMarker(place){
       })
     }
   ).bindPopup("<b>Your starting point</b>").addTo(map);
+}
+
+function renderEndMarker(place){
+  if(endMarker)map.removeLayer(endMarker);
+  endMarker=L.marker(
+    [place.lat,place.lon],
+    {
+      icon:L.divIcon({
+        className:"",
+        html:'<div class="end-marker"></div>',
+        iconSize:[16,16],
+        iconAnchor:[8,8]
+      })
+    }
+  ).bindPopup("<b>Destination</b>").addTo(map);
 }
 
 function getCurrentLocation(){
@@ -497,20 +521,22 @@ async function queryOverpass(query){
   throw lastError||new Error("Place discovery failed.");
 }
 
-function capCategoryShare(places,maxTotal,maxShare){
+function capCategoryShare(places,maxTotal,maxShare,overrides){
   const byCategory={};
   for(const place of places){
     (byCategory[place.category]=byCategory[place.category]||[]).push(place);
   }
   const categories=Object.keys(byCategory);
-  const perCategoryCap=Math.max(2,Math.round(maxTotal*maxShare));
+  const defaultCap=Math.max(2,Math.round(maxTotal*maxShare));
 
   const result=[];
   const leftovers=[];
   for(const cat of categories){
     const items=byCategory[cat];
-    result.push(...items.slice(0,perCategoryCap));
-    leftovers.push(...items.slice(perCategoryCap));
+    const share=(overrides&&overrides[cat]!=null)?overrides[cat]:maxShare;
+    const cap=Math.max(2,Math.round(maxTotal*share));
+    result.push(...items.slice(0,cap));
+    leftovers.push(...items.slice(cap));
   }
 
   // only top up from the capped-out categories if the balanced pool is too
@@ -524,7 +550,7 @@ function capCategoryShare(places,maxTotal,maxShare){
   return result.sort(()=>Math.random()-.5).slice(0,maxTotal);
 }
 
-async function discoverPlaces(start,radius){
+async function discoverPlaces(start,radius,foodRequested){
   const queries=buildOverpassQueries(start,radius);
   const all=[];
 
@@ -568,7 +594,12 @@ async function discoverPlaces(start,radius){
     .filter(place=>haversineKm(start,place)>0.15)
     .sort(()=>Math.random()-.5);
 
-  result=capCategoryShare(result,CONFIG.maxCandidates,.32);
+  result=capCategoryShare(
+    result,
+    CONFIG.maxCandidates,
+    .32,
+    {food:foodRequested?.4:.18}
+  );
 
   return result;
 }
@@ -834,7 +865,8 @@ function seededRandom(seed){
   };
 }
 
-function buildCandidateRoute(start,candidates,distanceConfig,seed){
+function buildCandidateRoute(start,candidates,distanceConfig,seed,prefs,end){
+  const finish=end||start;
   const random=seededRandom(
     `${state.searchId}|${start.lat}|${start.lon}|${seed}|${Date.now()}`
   );
@@ -844,6 +876,12 @@ function buildCandidateRoute(start,candidates,distanceConfig,seed){
   const used=new Set();
   let current=start;
   let travelled=0;
+
+  // unless food was explicitly requested, one food/coffee stop is plenty -
+  // after that, exclude further food candidates entirely rather than just
+  // scoring them down
+  const foodRequested=prefs&&prefs.food>.5;
+  const maxFoodStops=foodRequested?maxStops:1;
 
   const pool=candidates
     .slice(0,Math.min(candidates.length,50))
@@ -856,15 +894,19 @@ function buildCandidateRoute(start,candidates,distanceConfig,seed){
 
     const categoryCounts={};
     chosen.forEach(s=>{ categoryCounts[s.category]=(categoryCounts[s.category]||0)+1; });
+    const foodCount=categoryCounts.food||0;
 
     const scored=available.map(item=>{
+      // hard exclusion once the food quota for this route is used up
+      if(item.place.category==="food"&&foodCount>=maxFoodStops)return null;
+
       const toPlace=haversineKm(current,item.place);
-      const home=haversineKm(item.place,start);
-      const projected=travelled+toPlace+home;
+      const onward=haversineKm(item.place,finish);
+      const projected=travelled+toPlace+onward;
 
       let score=item.score;
 
-      // hard cap: never pick a stop that would blow the loop budget
+      // hard cap: never pick a stop that would blow the walk budget
       if(projected>distanceConfig.maxKm*1.05)return null;
 
       if(projected>distanceConfig.target)
@@ -894,27 +936,29 @@ function buildCandidateRoute(start,candidates,distanceConfig,seed){
     travelled+=selected.toPlace;
     current=selected.item.place;
 
-    const homeStretch=haversineKm(current,start);
-    if(chosen.length>=minStops&&(travelled+homeStretch)>=distanceConfig.target*0.85)break;
+    const finalStretch=haversineKm(current,finish);
+    if(chosen.length>=minStops&&(travelled+finalStretch)>=distanceConfig.target*0.85)break;
   }
 
   return chosen;
 }
 
-function routeDistance(start,stops){
-  if(!stops.length)return 0;
+function routeDistance(start,stops,end){
+  const finish=end||start;
+  if(!stops.length)return haversineKm(start,finish);
   let total=haversineKm(start,stops[0]);
   for(let i=0;i<stops.length-1;i++){
     total+=haversineKm(stops[i],stops[i+1]);
   }
-  total+=haversineKm(stops[stops.length-1],start);
+  total+=haversineKm(stops[stops.length-1],finish);
   return total;
 }
 
-function improveRoute(start,stops){
+function improveRoute(start,stops,end){
+  const finish=end||start;
   if(stops.length<3)return stops;
   let best=stops.slice();
-  let bestDistance=routeDistance(start,best);
+  let bestDistance=routeDistance(start,best,finish);
   let improved=true;
   let iterations=0;
 
@@ -929,7 +973,7 @@ function improveRoute(start,stops){
             .concat(best.slice(i,j+1).reverse())
             .concat(best.slice(j+1));
 
-        const distance=routeDistance(start,candidate);
+        const distance=routeDistance(start,candidate,finish);
 
         if(distance<bestDistance-.01){
           best=candidate;
@@ -949,8 +993,8 @@ function routeOverlap(a,b){
   return b.filter(x=>ids.has(x.id)).length/Math.min(a.length,b.length);
 }
 
-function generateWalkCandidates(start,places,prefs,distanceKey){
-  const config=DISTANCES[distanceKey];
+function generateWalkCandidates(start,places,prefs,config,end){
+  const finish=end||start;
   const ranked=rankCandidates(places,start,prefs);
   const candidates=[];
 
@@ -959,14 +1003,16 @@ function generateWalkCandidates(start,places,prefs,distanceKey){
       start,
       ranked,
       config,
-      `${state.searchId}-${i}`
+      `${state.searchId}-${i}`,
+      prefs,
+      finish
     );
 
     if(stops.length<config.stops[0])continue;
 
-    stops=improveRoute(start,stops);
+    stops=improveRoute(start,stops,finish);
 
-    const geometricDistance=routeDistance(start,stops);
+    const geometricDistance=routeDistance(start,stops,finish);
 
     if(
       geometricDistance<config.minKm*0.75||
@@ -993,8 +1039,9 @@ function generateWalkCandidates(start,places,prefs,distanceKey){
     .slice(0,8);
 }
 
-async function fetchWalkingRoute(start,stops){
-  const coordinates=[start,...stops,start]
+async function fetchWalkingRoute(start,stops,end){
+  const finish=end||start;
+  const coordinates=[start,...stops,finish]
     .map(place=>`${place.lon},${place.lat}`)
     .join(";");
 
@@ -1047,8 +1094,9 @@ function estimateVisitTime(place){
   return 8;
 }
 
-function fallbackRoute(start,stops){
-  const points=[start,...stops,start];
+function fallbackRoute(start,stops,end){
+  const finish=end||start;
+  const points=[start,...stops,finish];
   let distance=0;
 
   for(let i=0;i<points.length-1;i++){
@@ -1072,8 +1120,7 @@ function fallbackRoute(start,stops){
   };
 }
 
-async function buildRoutableWalks(start,candidates,distanceKey){
-  const config=DISTANCES[distanceKey];
+async function buildRoutableWalks(start,candidates,config,end){
   const routed=[];
 
   // try routing every candidate (already capped at 8 by generateWalkCandidates)
@@ -1082,7 +1129,8 @@ async function buildRoutableWalks(start,candidates,distanceKey){
     try{
       const geo=await fetchWalkingRoute(
         start,
-        candidate.stops
+        candidate.stops,
+        end
       );
 
       const withinBand=
@@ -1130,7 +1178,7 @@ const TITLE_ADJECTIVES=[
   "The Good Detour"
 ];
 
-const TITLE_NOUNS=[
+const TITLE_NOUNS_LOOP=[
   "Wander",
   "Circuit",
   "Detour",
@@ -1140,18 +1188,30 @@ const TITLE_NOUNS=[
   "Afternoon"
 ];
 
-function generateNarrative(stops,prefs,seed){
+const TITLE_NOUNS_P2P=[
+  "Crossing",
+  "Route",
+  "Walk",
+  "Line",
+  "Way",
+  "Traverse",
+  "Path"
+];
+
+function generateNarrative(stops,prefs,seed,destinationName){
   const random=seededRandom(
     stops.map(place=>place.id).join("|")+seed
   );
+
+  const nounPool=destinationName?TITLE_NOUNS_P2P:TITLE_NOUNS_LOOP;
 
   const title=
     TITLE_ADJECTIVES[
       Math.floor(random()*TITLE_ADJECTIVES.length)
     ]+
     " "+
-    TITLE_NOUNS[
-      Math.floor(random()*TITLE_NOUNS.length)
+    nounPool[
+      Math.floor(random()*nounPool.length)
     ];
 
   const categories=new Set(
@@ -1212,10 +1272,14 @@ function generateNarrative(stops,prefs,seed){
   const last=stops[stops.length-1]?.name||"somewhere nearby";
   const categoryText=[...categories].slice(0,3).join(", ");
 
+  const ending=destinationName
+    ?`before finishing at ${destinationName}`
+    :`before looping back via ${last}`;
+
   return{
     title,
     narrative:
-      `${narrative} Starting with ${first}, it wanders through ${categoryText} before looping back via ${last}.`
+      `${narrative} Starting with ${first}, it wanders through ${categoryText} ${ending}.`
   };
 }
 
@@ -1262,6 +1326,7 @@ function renderWalkOnMap(walk){
   clearMapLayers();
   document.getElementById("emptyState").style.display="none";
   renderStartMarker(walk.start);
+  if(walk.end)renderEndMarker(walk.end);
 
   if(
     walk.geo&&
@@ -1429,6 +1494,23 @@ async function resolveStart(){
   return getCurrentLocation();
 }
 
+async function resolveDestination(){
+  const input=
+    document.getElementById("destinationInput")
+      .value.trim();
+
+  if(!input)return null;
+
+  return geocode(input);
+}
+
+function midpoint(a,b){
+  return{
+    lat:(a.lat+b.lat)/2,
+    lon:(a.lon+b.lon)/2
+  };
+}
+
 function setStatus(message,warn=false){
   const element=
     document.getElementById("statusNote");
@@ -1460,12 +1542,31 @@ async function handleGenerate(){
 
     state.start=start;
 
-    map.setView(
-      [start.lat,start.lon],
-      15
-    );
-
     renderStartMarker(start);
+
+    const destinationInput=
+      document.getElementById("destinationInput")
+        .value.trim();
+
+    let destination=null;
+
+    if(destinationInput){
+      setStatus("Finding your destination…");
+      destination=await resolveDestination();
+      destination.label=destinationInput;
+    }
+
+    state.destination=destination;
+
+    if(destination){
+      map.fitBounds(
+        [[start.lat,start.lon],[destination.lat,destination.lon]],
+        {padding:[80,80]}
+      );
+      renderEndMarker(destination);
+    }else{
+      map.setView([start.lat,start.lon],15);
+    }
 
     const purpose=
       document.getElementById("purposeInput")
@@ -1476,26 +1577,60 @@ async function handleGenerate(){
       interpretPurpose(purpose);
 
     const preferences=state.preferences;
-    const distanceConfig=DISTANCES[state.distance];
+    const baseConfig=DISTANCES[state.distance];
+
+    // if a destination is set and it's further away than the selected
+    // distance band, extend the target/band to fit the direct trip rather
+    // than failing outright - the person clearly wants to get there
+    let config=baseConfig;
+    let directKm=0;
+    let extendedBand=false;
+
+    if(destination){
+      directKm=haversineKm(start,destination);
+      if(directKm>baseConfig.maxKm*0.9){
+        config={
+          ...baseConfig,
+          target:Math.max(baseConfig.target,directKm*1.15),
+          minKm:Math.max(baseConfig.minKm,directKm*1.02),
+          maxKm:Math.max(baseConfig.maxKm,directKm*1.6)
+        };
+        extendedBand=true;
+      }
+    }
 
     setStatus(
-      "Looking around you for interesting places…"
+      destination
+        ?"Looking for interesting places along the way…"
+        :"Looking around you for interesting places…"
     );
+
+    // when there's a destination, search a corridor around the midpoint
+    // rather than a circle around just the start, so places near the
+    // destination end are considered too
+    const discoveryCenter=destination?midpoint(start,destination):start;
+    const discoveryRadius=destination
+      ?Math.min(3500,Math.max(baseConfig.radius,(directKm/2+0.7)*1000))
+      :baseConfig.radius*CONFIG.discoveryRadiusMultiplier;
+
+    const foodRequested=preferences.food>.5;
 
     const places=await discoverPlaces(
-      start,
-      distanceConfig.radius*
-      CONFIG.discoveryRadiusMultiplier
+      discoveryCenter,
+      discoveryRadius,
+      foodRequested
     );
 
-    if(places.length<distanceConfig.stops[0]){
+    if(places.length<config.stops[0]){
       throw new Error(
-        "There aren't enough mapped places nearby to build a good walk. Try a longer distance."
+        destination
+          ?"There aren't enough mapped places between these points to build a good walk."
+          :"There aren't enough mapped places nearby to build a good walk. Try a longer distance."
       );
     }
 
     setStatus(
-      `Found ${places.length} places. Testing possible wanders…`
+      `Found ${places.length} places. Testing possible ${destination?"routes":"wanders"}…`
     );
 
     const candidates=
@@ -1503,12 +1638,15 @@ async function handleGenerate(){
         start,
         places,
         preferences,
-        state.distance
+        config,
+        destination
       );
 
     if(!candidates.length){
       throw new Error(
-        "I found places nearby, but couldn't build a sensible loop. Try increasing the distance."
+        destination
+          ?"I found places nearby, but couldn't build a sensible route between these two points. Try a shorter or longer distance."
+          :"I found places nearby, but couldn't build a sensible loop. Try increasing the distance."
       );
     }
 
@@ -1520,12 +1658,15 @@ async function handleGenerate(){
       await buildRoutableWalks(
         start,
         candidates,
-        state.distance
+        config,
+        destination
       );
 
     if(!routed.length){
       throw new Error(
-        `I couldn't find any walkable route near this starting point. Try a different starting point.`
+        destination
+          ?"I couldn't find a walkable route between these two points. Try a different destination."
+          :"I couldn't find any walkable route near this starting point. Try a different starting point."
       );
     }
 
@@ -1536,7 +1677,8 @@ async function handleGenerate(){
         generateNarrative(
           candidate.stops,
           preferences,
-          `${state.searchId}-${index}`
+          `${state.searchId}-${index}`,
+          destination?destination.label:null
         );
 
       walks.push({
@@ -1544,6 +1686,7 @@ async function handleGenerate(){
         narrative:narrative.narrative,
         stops:candidate.stops,
         start,
+        end:destination,
         geo:candidate.geo,
         withinBand:candidate.withinBand,
         scores:walkScores(candidate.stops)
@@ -1556,11 +1699,14 @@ async function handleGenerate(){
     selectWalk(0);
 
     const anyOffTarget=walks.some(w=>!w.withinBand);
+    const bandLabel=extendedBand
+      ?`~${config.minKm.toFixed(1)}–${config.maxKm.toFixed(1)} km (extended to fit your destination)`
+      :baseConfig.sub;
 
     setStatus(
       anyOffTarget
-        ?`Discovered ${places.length} places and built ${walks.length} walks — the closest fits ran a little outside ${distanceConfig.sub}.`
-        :`Discovered ${places.length} places and built ${walks.length} walks.`
+        ?`Discovered ${places.length} places and built ${walks.length} walks — the closest fits ran a little outside ${bandLabel}.`
+        :`Discovered ${places.length} places and built ${walks.length} walks (${bandLabel}).`
     );
   }catch(error){
     console.error(error);
